@@ -25,8 +25,17 @@ The UCEF implementation enforces privacy using standard Solidity authorisation c
 
 **Event Modification**
 
-The UCEF implementation modifies the Transfer and Approval events to hide the account and value parameters. This allows for the implementation of fully anonymous accounts. This modification is optional and can be overridden by the developer, an example of the openzeppelin implementation modified to hide the from, to and value parameters is available at [contracts/token/UCEF.sol](contracts/token/UCEF.sol).
+The UCEF implementation modifies the Transfer and Approval events to hide the account and value parameters. This allows for the implementation of fully anonymous accounts. This modification is optional and can be overridden by the developer, an example of the openzeppelin implementation modified to hide the from, to and value parameters is available at [packages/ucef/contracts/UCEF.sol](packages/ucef/contracts/UCEF.sol).
 
+
+## **Packages**
+
+| Package | Path | Description |
+|---------|------|-------------|
+| `@appliedblockchain/ucef` | [packages/ucef](packages/ucef) | UCEF base contracts and extensions for confidential ERC-20 tokens |
+| `@appliedblockchain/ucef-3643` | [packages/ucef-3643](packages/ucef-3643) | Confidential ERC-3643 token with private events and auditors. See [UCEF3643.md](UCEF3643.md) |
+
+This repository merges the former [confidential-erc-20](https://github.com/appliedblockchain/confidential-erc-20) and [confidential-erc-3643](https://github.com/appliedblockchain/confidential-erc-3643) repositories.
 
 ## **Examples**
 A range of examples are available at: [contracts/examples/](contracts/examples/)
