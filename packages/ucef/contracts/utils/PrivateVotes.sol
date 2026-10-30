@@ -8,6 +8,7 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {PrivateEventEmitter} from "./PrivateEventEmitter.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 
 /**
@@ -45,7 +46,7 @@ import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
  * When using this module the derived contract must implement {_getVotingUnits} and can use
  * {_transferVotingUnits} to track changes in the distribution of voting units.
  */
-abstract contract PrivateVotes is Context, EIP712, Nonces, IERC5805 {
+abstract contract PrivateVotes is Context, EIP712, Nonces, IERC5805, PrivateEventEmitter {
     using Checkpoints for Checkpoints.Trace208;
 
     // Event type constants for Private Events
@@ -75,18 +76,6 @@ abstract contract PrivateVotes is Context, EIP712, Nonces, IERC5805 {
     mapping(address delegatee => Checkpoints.Trace208) private _delegateCheckpoints;
 
     Checkpoints.Trace208 private _totalCheckpoints;
-
-    /**
-     * @dev Private Event for selective visibility of voting-related events
-     * @param allowedViewers List of addresses authorized to view the event
-     * @param eventType The keccak256 hash of the original event signature
-     * @param payload The ABI-encoded event arguments
-     */
-    event PrivateEvent(
-        address[] allowedViewers,
-        bytes32 indexed eventType,
-        bytes payload
-    );
 
     /**
      * @dev The clock was incorrectly modified.

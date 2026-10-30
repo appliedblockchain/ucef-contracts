@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {PrivateEventEmitter} from "./utils/PrivateEventEmitter.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
@@ -40,7 +41,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * - The contract maintains actual balances internally while exposing only authorized views
  * - Extensions should carefully consider their privacy model and access control
  */
-abstract contract UCEF is ERC20 {
+abstract contract UCEF is ERC20, PrivateEventEmitter {
     // Event type constants for Private Events
     /**
     * @notice Transfer event parameter mapping:
@@ -62,18 +63,6 @@ abstract contract UCEF is ERC20 {
     mapping(address account => uint256) private _balances;
     uint256 private _totalSupply;
     mapping(address account => mapping(address spender => uint256)) private _allowances;
-
-    /**
-     * @dev Private Event for selective visibility of on-chain events
-     * @param allowedViewers List of addresses authorized to view the event
-     * @param eventType The keccak256 hash of the original event signature
-     * @param payload The ABI-encoded event arguments
-     */
-    event PrivateEvent(
-        address[] allowedViewers,
-        bytes32 indexed eventType,
-        bytes payload
-    );
 
     /**
      * @dev Thrown when an unauthorized address attempts to view a balance

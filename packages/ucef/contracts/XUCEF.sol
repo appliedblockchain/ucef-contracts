@@ -281,6 +281,14 @@ contract XUCEF is UCEFOwned, Ownable, IXERC20, ERC20Permit {
     }
 
     /**
+     * @notice Mint authorization hook required by UCEF
+     * @dev Intentionally empty: mint access is enforced in `_mintWithCaller`, which only allows
+     * the lockbox, or a bridge within the minting limit set by the owner, to mint.
+     * Any new path that calls `_mint` must enforce its own access control or override this hook.
+     */
+    function _authorizeMint(address, uint256) internal view virtual override {}
+
+    /**
      * @notice Internal function for minting tokens
      *
      * @param _caller The caller address
