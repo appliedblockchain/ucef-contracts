@@ -15,7 +15,6 @@
     "coverage": "npx hardhat coverage",
     "script": "script() { npx hardhat --network ${2:-localhost} run scripts/${1}.ts; }; script",
     "clean:ignition": "rm -rf .ignition && rm -rf ./ignition/deployments",
-    "clean:all": "pnpm clean && pnpm clean:ignition",
     "deploy:module": "deploy() { npx hardhat ignition deploy ignition/modules/$1.ts --network ${2:-localhost} --deployment-id ${2:-localhost} --reset; }; deploy $@",
     "clean": "npx hardhat clean",
     "clean:all": "pnpm clean && pnpm -r --if-present clean",

@@ -27,6 +27,19 @@ The UCEF implementation enforces privacy using standard Solidity authorisation c
 
 The UCEF implementation modifies the Transfer and Approval events to hide the account and value parameters. This allows for the implementation of fully anonymous accounts. This modification is optional and can be overridden by the developer, an example of the openzeppelin implementation modified to hide the from, to and value parameters is available at [packages/ucef/contracts/UCEF.sol](packages/ucef/contracts/UCEF.sol).
 
+## ***Confidential ERC-3643 (UCEF3643)***
+
+ERC-3643 is the token standard for regulated assets, such as tokenised securities. It enforces compliance on chain: every holder must have a verified identity, and every transfer must pass the compliance rules. However, a standard ERC-3643 token exposes balances and transfers to everyone.
+
+UCEF3643 applies the UCEF approach to ERC-3643. It keeps all ERC-3643 compliance mechanisms and adds programmable confidentiality, enforced with standard Solidity authorisation checks:
+
+- **Regulatory compliance**: identity verification, compliance checks, transfer restrictions, token freezing and agent management work as in ERC-3643
+- **Confidential balances**: only authorised accounts can read balances
+- **Private events**: `Transfer`, `Approval`, `TokensFrozen` and `TokensUnfrozen` are replaced by a `PrivateEvent` that only the involved addresses can view
+- **Auditors**: agents can add auditors, who can view all private events for compliance and monitoring
+
+The contract is available at [packages/ucef-3643/contracts/UCEF3643.sol](packages/ucef-3643/contracts/UCEF3643.sol). See [UCEF3643.md](UCEF3643.md) for the private events system, auditor management, testing and deployment.
+
 
 ## **Packages**
 
@@ -36,6 +49,11 @@ The UCEF implementation modifies the Transfer and Approval events to hide the ac
 | `@appliedblockchain/ucef-3643` | [packages/ucef-3643](packages/ucef-3643) | Confidential ERC-3643 token with private events and auditors. See [UCEF3643.md](UCEF3643.md) |
 
 This repository merges the former [confidential-erc-20](https://github.com/appliedblockchain/confidential-erc-20) and [confidential-erc-3643](https://github.com/appliedblockchain/confidential-erc-3643) repositories.
+
+## **Testing and Deployment**
+
+- Confidential ERC-20 tokens: see [DEPLOY.md](DEPLOY.md)
+- Confidential ERC-3643 token (UCEF3643): see [UCEF3643.md](UCEF3643.md)
 
 ## **Examples**
 A range of examples are available at: [contracts/examples/](contracts/examples/)
