@@ -55,9 +55,9 @@ const config: HardhatUserConfig = {
   ignition: {
     strategyConfig: {
       create2: {
-        salt: process.env.CREATE2_SALT ?? '0xab5d000000000000000000000000000000000000000000000000000000000000'
-      }
-    }
+        salt: process.env.CREATE2_SALT ?? '0xab5d000000000000000000000000000000000000000000000000000000000000',
+      },
+    },
   },
   networks: {
     localhost: {

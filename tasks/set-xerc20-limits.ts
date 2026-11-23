@@ -24,5 +24,3 @@ task('xerc20:set-limits', 'Set minting and burning limits for a bridge on an XER
     const receipt = await tx.wait()
     console.log(`confirmed in block ${receipt.blockNumber}`)
   })
-
-

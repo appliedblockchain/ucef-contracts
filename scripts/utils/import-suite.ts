@@ -135,58 +135,64 @@ export async function importSuite(filePath: string): Promise<ImportedSuite> {
 
   // Load contracts
   const suite: Suite = {
-    claimIssuerContract: hasClaimIssuer ? await ClaimIssuer.attach(suiteJson.suite.claimIssuerContract) as ClaimIssuer : undefined,
-    claimTopicsRegistry: await ClaimTopicsRegistry.attach(suiteJson.suite.claimTopicsRegistry) as ClaimTopicsRegistry,
-    trustedIssuersRegistry: await TrustedIssuersRegistry.attach(suiteJson.suite.trustedIssuersRegistry) as TrustedIssuersRegistry,
-    identityRegistryStorage: await IdentityRegistryStorage.attach(suiteJson.suite.identityRegistryStorage) as IdentityRegistryStorage,
-    defaultCompliance: await DefaultCompliance.attach(suiteJson.suite.defaultCompliance) as DefaultCompliance,
-    identityRegistry: await IdentityRegistry.attach(suiteJson.suite.identityRegistry) as IdentityRegistry,
+    claimIssuerContract: hasClaimIssuer
+      ? ((await ClaimIssuer.attach(suiteJson.suite.claimIssuerContract)) as ClaimIssuer)
+      : undefined,
+    claimTopicsRegistry: (await ClaimTopicsRegistry.attach(suiteJson.suite.claimTopicsRegistry)) as ClaimTopicsRegistry,
+    trustedIssuersRegistry: (await TrustedIssuersRegistry.attach(
+      suiteJson.suite.trustedIssuersRegistry,
+    )) as TrustedIssuersRegistry,
+    identityRegistryStorage: (await IdentityRegistryStorage.attach(
+      suiteJson.suite.identityRegistryStorage,
+    )) as IdentityRegistryStorage,
+    defaultCompliance: (await DefaultCompliance.attach(suiteJson.suite.defaultCompliance)) as DefaultCompliance,
+    identityRegistry: (await IdentityRegistry.attach(suiteJson.suite.identityRegistry)) as IdentityRegistry,
     tokenOID: await ethers.getContractAt('Identity', suiteJson.suite.tokenOID),
-    token: await Token.attach(suiteJson.suite.token) as Token,
+    token: (await Token.attach(suiteJson.suite.token)) as Token,
   }
 
   const authorities: Authorities = {
-    identityImplementationAuthority: await ImplementationAuthority.attach(
+    identityImplementationAuthority: (await ImplementationAuthority.attach(
       suiteJson.authorities.identityImplementationAuthority,
-    ) as ImplementationAuthority,
-    trexImplementationAuthority: await TREXImplementationAuthority.attach(
+    )) as ImplementationAuthority,
+    trexImplementationAuthority: (await TREXImplementationAuthority.attach(
       suiteJson.authorities.trexImplementationAuthority,
-    ) as TREXImplementationAuthority,
+    )) as TREXImplementationAuthority,
   }
 
   const factories: Factories = {
-    identityFactory: await IdFactory.attach(suiteJson.factories.identityFactory) as IdFactory,
-    trexFactory: await TREXFactory.attach(suiteJson.factories.trexFactory) as TREXFactory,
+    identityFactory: (await IdFactory.attach(suiteJson.factories.identityFactory)) as IdFactory,
+    trexFactory: (await TREXFactory.attach(suiteJson.factories.trexFactory)) as TREXFactory,
   }
 
   const implementations: Implementations = {
     identityImplementation: await ethers.getContractAt('Identity', suiteJson.implementations.identityImplementation),
-    claimTopicsRegistryImplementation: await ClaimTopicsRegistry.attach(
+    claimTopicsRegistryImplementation: (await ClaimTopicsRegistry.attach(
       suiteJson.implementations.claimTopicsRegistryImplementation,
-    ) as ClaimTopicsRegistry,
-    trustedIssuersRegistryImplementation: await TrustedIssuersRegistry.attach(
+    )) as ClaimTopicsRegistry,
+    trustedIssuersRegistryImplementation: (await TrustedIssuersRegistry.attach(
       suiteJson.implementations.trustedIssuersRegistryImplementation,
-    ) as TrustedIssuersRegistry,
-    identityRegistryStorageImplementation: await IdentityRegistryStorage.attach(
+    )) as TrustedIssuersRegistry,
+    identityRegistryStorageImplementation: (await IdentityRegistryStorage.attach(
       suiteJson.implementations.identityRegistryStorageImplementation,
-    ) as IdentityRegistryStorage,
-    identityRegistryImplementation: await IdentityRegistry.attach(
+    )) as IdentityRegistryStorage,
+    identityRegistryImplementation: (await IdentityRegistry.attach(
       suiteJson.implementations.identityRegistryImplementation,
-    ) as IdentityRegistry,
+    )) as IdentityRegistry,
     modularComplianceImplementation: await ethers.getContractAt(
       'ModularCompliance',
       suiteJson.implementations.modularComplianceImplementation,
     ),
-    tokenImplementation: await Token.attach(suiteJson.implementations.tokenImplementation) as Token,
+    tokenImplementation: (await Token.attach(suiteJson.implementations.tokenImplementation)) as Token,
   }
 
   const hasIdentities = !!suiteJson.identities
   let identities: Identities | undefined
   if (hasIdentities) {
     identities = {
-      aliceIdentity: await Identity.attach(suiteJson.identities.aliceIdentity) as Identity,
-      bobIdentity: await Identity.attach(suiteJson.identities.bobIdentity) as Identity,
-      charlieIdentity: await Identity.attach(suiteJson.identities.charlieIdentity) as Identity,
+      aliceIdentity: (await Identity.attach(suiteJson.identities.aliceIdentity)) as Identity,
+      bobIdentity: (await Identity.attach(suiteJson.identities.bobIdentity)) as Identity,
+      charlieIdentity: (await Identity.attach(suiteJson.identities.charlieIdentity)) as Identity,
     }
   }
 

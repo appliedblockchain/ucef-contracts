@@ -5,15 +5,17 @@ task('call', 'Execute a read-only call with cast-style params')
   .addPositionalParam('sig', 'The function signature to call')
   .addVariadicPositionalParam('args', 'The arguments of the function to call', [])
   .setAction(async (args, hre) => {
-    const { to, sig, args: fnArgs } = args as {
+    const {
+      to,
+      sig,
+      args: fnArgs,
+    } = args as {
       to: string
       sig: string
       args: string[]
     }
 
-    const normalizedSig = sig.trim().startsWith('function ')
-      ? sig.trim()
-      : `function ${sig.trim()}`
+    const normalizedSig = sig.trim().startsWith('function ') ? sig.trim() : `function ${sig.trim()}`
     const iface = new hre.ethers.Interface([normalizedSig])
     let fragment: any = null
     iface.forEachFunction((f) => {
@@ -43,5 +45,3 @@ task('call', 'Execute a read-only call with cast-style params')
       console.log(result)
     }
   })
-
-
