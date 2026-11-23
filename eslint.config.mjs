@@ -59,4 +59,21 @@ export default [
       semi: ['error', 'never'],
     },
   },
+  {
+    // Chai property assertions such as `expect(x).to.be.true` are expressions by design.
+    files: ['test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-expressions': 'off',
+    },
+  },
+  {
+    // Package entry points are CommonJS modules that load compiled artifacts.
+    files: ['packages/*/index.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 ]

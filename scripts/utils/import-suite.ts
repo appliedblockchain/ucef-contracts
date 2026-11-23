@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs'
 import { Wallet, Signer, BaseContract } from 'ethers'
 import { ethers, network } from 'hardhat'
 import { NetworkName } from '@appliedblockchain/silentdatarollup-core'
@@ -92,12 +93,8 @@ async function getSignersFromAccounts(accounts: any): Promise<Record<string, Wal
  * Import a suite from a JSON file and return the suite object with signers and contracts loaded
  */
 export async function importSuite(filePath: string): Promise<ImportedSuite> {
-  const fs = require('fs')
-  const path = require('path')
-  const { ethers } = require('hardhat')
-
   // Read the suite deployment JSON file
-  const suiteJson = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  const suiteJson = JSON.parse(readFileSync(filePath, 'utf8'))
 
   // Get contract factories
   const [

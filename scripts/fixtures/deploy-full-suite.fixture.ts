@@ -60,8 +60,12 @@ export async function main({
     suite = (await deployBasicSuite(signers)) as unknown as ImportedSuite
   }
 
-  !skipClaimIssuer && (await deployClaimIssuer(suite))
-  !skipIdentities && (await deployIdentities(suite))
+  if (!skipClaimIssuer) {
+    await deployClaimIssuer(suite)
+  }
+  if (!skipIdentities) {
+    await deployIdentities(suite)
+  }
 
   return suite
 }
