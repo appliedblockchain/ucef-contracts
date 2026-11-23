@@ -3,6 +3,7 @@ import { ethers } from 'hardhat'
 import { Signer } from 'ethers'
 import { UCEFOnlyOwnerAndRegulator } from '../../typechain-types'
 import { deployToken, transfer } from '../fixtures/deploy-token'
+import { EVENT_TYPE_REGULATOR_UPDATED, EVENT_TYPE_TRANSFER, encodePayload } from '../fixtures/private-event'
 
 describe('UCEFOnlyOwnerAndRegulator', function () {
   let token: UCEFOnlyOwnerAndRegulator
@@ -64,12 +65,13 @@ describe('UCEFOnlyOwnerAndRegulator', function () {
       await transfer(token.connect(regulator), user1Address, TRANSFER_AMOUNT)
     })
 
-    it('Should transfer tokens between accounts and emit Transfer event with all zero addresses', async function () {
+    it('Should transfer tokens between accounts and emit a private Transfer event to regulator, sender and receiver', async function () {
       // Transfer from user1 to user2
       const halfAmount = TRANSFER_AMOUNT / 2n
+      const payload = encodePayload(['address', 'address', 'uint256'], [user1Address, user2Address, halfAmount])
       await expect(token.connect(user1).transfer(user2Address, halfAmount))
-        .to.emit(token, 'Transfer')
-        .withArgs(ethers.ZeroAddress, ethers.ZeroAddress, 0n)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([regulatorAddress, user1Address, user2Address], EVENT_TYPE_TRANSFER, payload)
     })
 
     it("Should fail if sender doesn't have enough tokens", async function () {
@@ -99,15 +101,18 @@ describe('UCEFOnlyOwnerAndRegulator', function () {
     })
 
     it('Should revert if non-regulator account tries to access another account balance', async function () {
-      await expect(token.connect(user1).balanceOf(user2Address)).to.be.revertedWith('Unauthorized access to balance')
+      await expect(token.connect(user1).balanceOf(user2Address))
+        .to.be.revertedWithCustomError(token, 'UCEFUnauthorizedBalanceAccess')
+        .withArgs(user1Address, user2Address)
     })
   })
 
   describe('Regulator functionality', function () {
     it('Should allow regulator to update to a new regulator', async function () {
+      const payload = encodePayload(['address', 'address'], [regulatorAddress, user1Address])
       await expect(token.connect(regulator).updateRegulator(user1Address))
-        .to.emit(token, 'RegulatorUpdated')
-        .withArgs(regulatorAddress, user1Address)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([regulatorAddress, user1Address], EVENT_TYPE_REGULATOR_UPDATED, payload)
 
       expect(await token.regulator()).to.equal(user1Address)
     })
@@ -133,9 +138,9 @@ describe('UCEFOnlyOwnerAndRegulator', function () {
       expect(balance).to.equal(0)
 
       // Old regulator should not be able to check balances anymore
-      await expect(token.connect(regulator).balanceOf(user2Address)).to.be.revertedWith(
-        'Unauthorized access to balance',
-      )
+      await expect(token.connect(regulator).balanceOf(user2Address))
+        .to.be.revertedWithCustomError(token, 'UCEFUnauthorizedBalanceAccess')
+        .withArgs(regulatorAddress, user2Address)
     })
   })
 })

@@ -3,6 +3,7 @@ import { ethers } from 'hardhat'
 import { Signer } from 'ethers'
 import { UCEFCustom } from '../../typechain-types'
 import { deployToken, mintTo } from '../fixtures/deploy-token'
+import { EVENT_TYPE_TRANSFER, encodePayload } from '../fixtures/private-event'
 
 describe('UCEFCustom', function () {
   let token: UCEFCustom
@@ -90,11 +91,12 @@ describe('UCEFCustom', function () {
       await mintTo(token, user1Address, ABOVE_THRESHOLD_AMOUNT)
     })
 
-    it('Should transfer tokens between accounts and emit Transfer event with all zero addresses', async function () {
+    it('Should transfer tokens between accounts and emit a private Transfer event to sender and receiver', async function () {
       const transferAmount = ethers.parseEther('1000')
+      const payload = encodePayload(['address', 'address', 'uint256'], [user1Address, user2Address, transferAmount])
       await expect(token.connect(user1).transfer(user2Address, transferAmount))
-        .to.emit(token, 'Transfer')
-        .withArgs(ethers.ZeroAddress, ethers.ZeroAddress, 0n)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([user1Address, user2Address], EVENT_TYPE_TRANSFER, payload)
 
       const user2Balance = await token.connect(user2).balanceOf(user2Address)
       expect(user2Balance).to.equal(transferAmount)
