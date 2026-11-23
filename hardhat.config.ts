@@ -10,6 +10,24 @@ import './tasks/call'
 // Load .env file
 Config()
 
+const { SILENTDATA_RPC_URL, PRIVATE_KEY, SILENTDATA_CHAIN_ID } = process.env
+
+// The remote network is only configured when its settings are present, so local
+// compile and test runs do not need them.
+const silentdataNetwork =
+  SILENTDATA_RPC_URL && PRIVATE_KEY && SILENTDATA_CHAIN_ID
+    ? {
+        silentdata: {
+          url: SILENTDATA_RPC_URL,
+          accounts: [PRIVATE_KEY],
+          chainId: Number(SILENTDATA_CHAIN_ID),
+          silentdata: {
+            authSignatureType: SignatureType.Raw,
+          },
+        },
+      }
+    : {}
+
 const config: HardhatUserConfig = {
   solidity: {
     compilers: [
@@ -46,14 +64,7 @@ const config: HardhatUserConfig = {
       url: 'http://127.0.0.1:8545',
       chainId: 31337,
     },
-    silentdata: {
-      url: process.env.SILENTDATA_RPC_URL!,
-      accounts: [process.env.PRIVATE_KEY!],
-      chainId: Number(process.env.SILENTDATA_CHAIN_ID!),
-      silentdata: {
-        authSignatureType: SignatureType.Raw,
-      },
-    },
+    ...silentdataNetwork,
   },
   paths: {
     sources: './contracts',
