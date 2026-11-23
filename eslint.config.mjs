@@ -23,6 +23,7 @@ export default [
       '**/artifacts/',
       '**/cache/',
       '**/typechain-types/',
+      'packages/*/types/',
       '**/.ignition/',
       '**/coverage/',
       'eslint.config.mjs',
