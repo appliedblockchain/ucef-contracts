@@ -179,10 +179,12 @@ contract UCEF3643 is Token, PrivateEventEmitter {
     }
 
     /**
-     *  @dev ERC-3643 (v4.1.6) replacing `balanceOf` with `_balanceOf`
+     *  @dev ERC-3643 (v4.1.6) replacing `balanceOf` with `_balanceOf`, and checking the allowance
+     *  before the balance so that the outcome for a caller without sufficient allowance does not
+     *  depend on the balance of `_from`. Both checks revert with the same reason.
      *  @notice ERC-20 overridden function that include logic to check for trade validity.
      *  Require that the from and to addresses are not frozen.
-     *  Require that the value should not exceed available balance .
+     *  Require that the value should not exceed the caller's allowance nor the available balance.
      *  Require that the to address is a verified address
      *  @param _from The address of the sender
      *  @param _to The address of the receiver
@@ -195,9 +197,14 @@ contract UCEF3643 is Token, PrivateEventEmitter {
         uint256 _amount
     ) external override whenNotPaused returns (bool) {
         require(!_frozen[_to] && !_frozen[_from], "wallet is frozen");
-        require(_amount <= _balanceOf(_from) - (_frozenTokens[_from]), "Insufficient Balance");
+        uint256 currentAllowance = _allowances[_from][msg.sender];
+        // The balance is only read once the allowance check has passed
+        require(
+            _amount <= currentAllowance && _amount <= _balanceOf(_from) - (_frozenTokens[_from]),
+            "Insufficient allowance or balance"
+        );
         if (_tokenIdentityRegistry.isVerified(_to) && _tokenCompliance.canTransfer(_from, _to, _amount)) {
-            _approve(_from, msg.sender, _allowances[_from][msg.sender] - (_amount));
+            _approve(_from, msg.sender, currentAllowance - (_amount));
             _transfer(_from, _to, _amount);
             _tokenCompliance.transferred(_from, _to, _amount);
             return true;
