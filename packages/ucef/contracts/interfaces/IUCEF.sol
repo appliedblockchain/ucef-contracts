@@ -56,4 +56,10 @@ interface IUCEF is IERC20 {
      * @dev Emitted when an unauthorized balance access is attempted
      */
     error UCEFUnauthorizedBalanceAccess(address sender, address account);
+
+    /**
+     * @dev Thrown when a transfer or burn exceeds the balance of the sending account.
+     * Does not include the balance itself.
+     */
+    error UCEFInsufficientBalance(address sender, uint256 needed);
 } 
