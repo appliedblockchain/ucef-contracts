@@ -221,4 +221,55 @@ describe('UCEFOnlyOwner', function () {
       })
     })
   })
+
+  describe('Insufficient balance', function () {
+    // The 32-byte ABI word of a balance, as it would appear in revert data
+    const encodedWord = (value: bigint) => ethers.zeroPadValue(ethers.toBeHex(value), 32).slice(2)
+
+    async function revertData(call: Promise<unknown>): Promise<string> {
+      try {
+        await call
+      } catch (error) {
+        return (error as { data: string }).data
+      }
+      throw new Error('Expected call to revert')
+    }
+
+    beforeEach(async function () {
+      await transfer(token.connect(owner), user1Address, TRANSFER_AMOUNT)
+    })
+
+    it("Should not include the holder's balance when an approved spender transfers more than the balance", async function () {
+      const exceedAmount = TRANSFER_AMOUNT + 1n
+      await token.connect(user1).approve(user2Address, ethers.MaxUint256)
+
+      const data = await revertData(
+        token.connect(user2).transferFrom.staticCall(user1Address, user2Address, exceedAmount),
+      )
+      expect(data).to.not.include(encodedWord(TRANSFER_AMOUNT))
+
+      await expect(token.connect(user2).transferFrom(user1Address, user2Address, exceedAmount))
+        .to.be.revertedWithCustomError(token, 'UCEFInsufficientBalance')
+        .withArgs(user1Address, exceedAmount)
+    })
+
+    it("Should not include the holder's balance when the holder transfers more than the balance", async function () {
+      const exceedAmount = TRANSFER_AMOUNT + 1n
+
+      const data = await revertData(token.connect(user1).transfer.staticCall(user2Address, exceedAmount))
+      expect(data).to.not.include(encodedWord(TRANSFER_AMOUNT))
+
+      await expect(token.connect(user1).transfer(user2Address, exceedAmount))
+        .to.be.revertedWithCustomError(token, 'UCEFInsufficientBalance')
+        .withArgs(user1Address, exceedAmount)
+    })
+
+    it('Should still allow an approved spender to transfer the full balance', async function () {
+      await token.connect(user1).approve(user2Address, ethers.MaxUint256)
+      await token.connect(user2).transferFrom(user1Address, user2Address, TRANSFER_AMOUNT)
+
+      expect(await token.connect(user1).balanceOf(user1Address)).to.equal(0n)
+      expect(await token.connect(user2).balanceOf(user2Address)).to.equal(TRANSFER_AMOUNT)
+    })
+  })
 })

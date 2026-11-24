@@ -80,6 +80,15 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
     error UCEFUnauthorizedMint(address sender, address to, uint256 amount);
 
     /**
+     * @dev Thrown when a transfer or burn exceeds the balance of the sending account.
+     * Replaces ERC20InsufficientBalance, which would include the account's balance in the revert data
+     * and return it to any caller able to move the account's tokens, such as an approved spender.
+     * @param sender The address whose balance is insufficient
+     * @param needed The amount that was requested
+     */
+    error UCEFInsufficientBalance(address sender, uint256 needed);
+
+    /**
      * @dev Constructor that sets the name and symbol of the token
      * @param name The name of the token
      * @param symbol The symbol of the token
@@ -162,7 +171,7 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
         } else {
             uint256 fromBalance = _balances[from];
             if (fromBalance < value) {
-                revert ERC20InsufficientBalance(from, fromBalance, value);
+                revert UCEFInsufficientBalance(from, value);
             }
             unchecked {
                 // Overflow not possible: value <= fromBalance <= totalSupply.
