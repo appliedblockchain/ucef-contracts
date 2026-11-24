@@ -308,7 +308,7 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
         address[] memory allowedViewers = _getTransferEventViewers(from, to, value);
         bytes memory payload = abi.encode(from, to, value);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_TRANSFER, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_TRANSFER, payload);
     }
 
     /**
@@ -356,7 +356,7 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
         address[] memory allowedViewers = _getApprovalEventViewers(owner, spender, value);
         bytes memory payload = abi.encode(owner, spender, value);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_APPROVAL, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_APPROVAL, payload);
     }
 
     /**

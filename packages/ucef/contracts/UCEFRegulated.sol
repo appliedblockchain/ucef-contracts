@@ -216,7 +216,7 @@ abstract contract UCEFRegulated is UCEF {
         address[] memory allowedViewers = _getRegulatorUpdatedEventViewers(previousRegulator, newRegulator);
         bytes memory payload = abi.encode(previousRegulator, newRegulator);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_REGULATOR_UPDATED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_REGULATOR_UPDATED, payload);
     }
 
     /**

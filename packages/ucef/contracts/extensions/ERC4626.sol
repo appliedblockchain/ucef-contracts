@@ -380,7 +380,7 @@ abstract contract ERC4626 is UCEF, IERC4626 {
         address[] memory allowedViewers = _getDepositEventViewers(caller, receiver, assets, shares);
         bytes memory payload = abi.encode(caller, receiver, assets, shares);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_DEPOSIT, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_DEPOSIT, payload);
     }
 
     /**
@@ -438,7 +438,7 @@ abstract contract ERC4626 is UCEF, IERC4626 {
         address[] memory allowedViewers = _getWithdrawEventViewers(caller, receiver, owner, assets, shares);
         bytes memory payload = abi.encode(caller, receiver, owner, assets, shares);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_WITHDRAW, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_WITHDRAW, payload);
     }
 
     /**

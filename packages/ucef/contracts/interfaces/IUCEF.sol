@@ -12,13 +12,23 @@ interface IUCEF is IERC20 {
      * @dev Private Event for selective visibility of on-chain events
      * @param allowedViewers List of addresses authorized to view the event
      * @param eventType The keccak256 hash of the original event signature
-     * @param payload The ABI-encoded event arguments
+     * @param payload The ABI-encoded event arguments, followed by a 32-byte salt
      */
     event PrivateEvent(
         address[] allowedViewers,
         bytes32 indexed eventType,
         bytes payload
     );
+
+    /**
+     * @dev Sets the caller's secret seed, from which the salts of its private events are derived.
+     */
+    function setPrivateEventSeed(bytes32 seed) external;
+
+    /**
+     * @dev Returns whether the caller has set a seed.
+     */
+    function hasPrivateEventSeed() external view returns (bool);
 
     /**
      * @dev Returns the amount of tokens owned by `account`.

@@ -3,6 +3,7 @@ import { UCEF3643Contracts, UCEF3643 } from '@appliedblockchain/ucef-3643'
 import TREX from '@tokenysolutions/t-rex'
 import { MockIdentityRegistry, MockCompliance, MockTrexImplementationAuthority } from '../../typechain-types'
 import { Signer } from 'ethers'
+import { setPrivateEventSeeds } from './private-event'
 
 export async function deployToken3643({
   agent,
@@ -10,12 +11,14 @@ export async function deployToken3643({
   symbol,
   decimals,
   onchainID,
+  setSeeds = true,
 }: {
   agent: Signer
   name: string
   symbol: string
   decimals: number
   onchainID: string
+  setSeeds?: boolean
 }) {
   const agentAddress = await agent.getAddress()
   // Deploy mock contracts
@@ -59,6 +62,10 @@ export async function deployToken3643({
     UCEF3643Contracts.UCEF3643.abi,
     await tokenProxy_.getAddress(),
   )) as unknown as UCEF3643
+
+  if (setSeeds) {
+    await setPrivateEventSeeds(tokenProxy)
+  }
 
   // Register and verify agent identity
   await mockIdentityRegistry.registerIdentity(agentAddress, 1, true)

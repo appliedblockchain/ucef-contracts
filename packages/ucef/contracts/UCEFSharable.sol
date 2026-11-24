@@ -305,7 +305,7 @@ abstract contract UCEFSharable is UCEF {
         address[] memory allowedViewers = _getViewerPermissionUpdatedEventViewers(account, viewer, status);
         bytes memory payload = abi.encode(account, viewer, status);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_VIEWER_PERMISSION_UPDATED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_VIEWER_PERMISSION_UPDATED, payload);
     }
 
     /**
@@ -354,7 +354,7 @@ abstract contract UCEFSharable is UCEF {
         address[] memory allowedViewers = _getSupervisorUpdatedEventViewers(previousSupervisor, newSupervisor);
         bytes memory payload = abi.encode(previousSupervisor, newSupervisor);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_SUPERVISOR_UPDATED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_SUPERVISOR_UPDATED, payload);
     }
 
     /**

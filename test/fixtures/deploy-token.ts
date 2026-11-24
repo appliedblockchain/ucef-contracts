@@ -1,5 +1,6 @@
 import { BaseContract, ContractTransactionResponse, Signer } from 'ethers'
 import { ethers } from 'hardhat'
+import { setPrivateEventSeeds } from './private-event'
 
 type DeployTokenOptions = {
   initialSupply?: bigint
@@ -21,6 +22,7 @@ export async function deployToken<T extends TokenContract>(
   const TokenFactory = await ethers.getContractFactory(contractName)
   const token = (await TokenFactory.deploy(...args)) as unknown as T
   await token.waitForDeployment()
+  await setPrivateEventSeeds(token)
 
   if (options.initialSupply) {
     await mintTo(token, owner, options.initialSupply)

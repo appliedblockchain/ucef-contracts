@@ -10,19 +10,109 @@ import {IIdentityRegistry} from "@tokenysolutions/t-rex/contracts/registry/inter
  * @dev Abstract contract that provides private event emission functionality
  * This contract defines the PrivateEvent that can be used to emit private events
  * with restricted visibility to specific addresses
+ *
+ * Salted payloads (same scheme as the PrivateEventEmitter of the ucef package):
+ * every payload ends with a 32-byte salt derived from a secret seed of the account that
+ * triggered it (`msg.sender`, else `tx.origin`), so a guessed payload cannot be confirmed
+ * against the public block hash. Accounts set their seed once with `setPrivateEventSeed`;
+ * it ratchets on every event, so a leaked seed does not expose earlier events. Emitting a
+ * private event reverts when neither account has a seed.
+ *
+ * The seeds live at a fixed ERC-7201 slot, so they do not shift the storage layout of
+ * upgradeable tokens. Whoever can upgrade the token can deploy an implementation that
+ * reads them, so the token's owner is trusted not to.
  */
 abstract contract PrivateEventEmitter {
     /**
      * @dev Emitted when a private event is logged
      * @param allowedViewers Array of addresses authorized to view this event
      * @param eventType The keccak256 hash of the original event signature
-     * @param payload ABI-encoded event arguments
+     * @param payload ABI-encoded event arguments, followed by a 32-byte salt
      */
     event PrivateEvent(
         address[] allowedViewers,
         bytes32 indexed eventType,
         bytes payload
     );
+
+    /**
+     * @dev Thrown when a private event is emitted and neither `sender` nor `tx.origin` has set a seed
+     */
+    error PrivateEventSeedNotSet(address sender);
+
+    /**
+     * @dev Thrown when `setPrivateEventSeed` is called with a zero seed
+     */
+    error PrivateEventZeroSeed();
+
+    /// @custom:storage-location erc7201:silentdata.storage.UCEF3643PrivateEventEmitter
+    struct PrivateEventEmitterStorage {
+        mapping(address => bytes32) seeds;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("silentdata.storage.UCEF3643PrivateEventEmitter")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant PRIVATE_EVENT_EMITTER_STORAGE_LOCATION =
+        0x1a121175e2c3714b6ab528cca79c89bb9dc9896e0229270d781a671e2fd6d600;
+
+    /**
+     * @notice Sets the secret seed the salts of the caller's private events are derived from
+     * @dev Can be called again to replace the seed. The seed must be random and kept secret.
+     * @param seed Secret random value, must not be zero
+     */
+    function setPrivateEventSeed(bytes32 seed) external {
+        if (seed == bytes32(0)) {
+            revert PrivateEventZeroSeed();
+        }
+        _getPrivateEventEmitterStorage().seeds[msg.sender] = seed;
+    }
+
+    /**
+     * @notice Whether the caller has set a seed
+     * @dev Only answers for `msg.sender`, so it does not show which accounts use the token
+     */
+    function hasPrivateEventSeed() external view returns (bool) {
+        return _getPrivateEventEmitterStorage().seeds[msg.sender] != bytes32(0);
+    }
+
+    /**
+     * @dev Emits a PrivateEvent with a salt appended to the payload
+     */
+    function _emitPrivateEvent(address[] memory allowedViewers, bytes32 eventType, bytes memory payload) internal {
+        emit PrivateEvent(allowedViewers, eventType, bytes.concat(payload, _nextPrivateEventSalt()));
+    }
+
+    /**
+     * @dev Returns the salt for the next private event and ratchets the seed it came from:
+     * salt = keccak256(seed, "salt"), next seed = keccak256(seed, "next")
+     */
+    function _nextPrivateEventSalt() private returns (bytes32) {
+        // No account can have set a seed while the token is being constructed
+        if (address(this).code.length == 0) {
+            return bytes32(0);
+        }
+
+        mapping(address => bytes32) storage seeds = _getPrivateEventEmitterStorage().seeds;
+        address account = msg.sender;
+        bytes32 seed = seeds[account];
+        if (seed == bytes32(0)) {
+            // tx.origin is only a source of secret randomness here, not authorization
+            // slither-disable-next-line tx-origin
+            account = tx.origin;
+            seed = seeds[account];
+            if (seed == bytes32(0)) {
+                revert PrivateEventSeedNotSet(msg.sender);
+            }
+        }
+
+        seeds[account] = keccak256(abi.encodePacked(seed, "next"));
+        return keccak256(abi.encodePacked(seed, "salt"));
+    }
+
+    function _getPrivateEventEmitterStorage() private pure returns (PrivateEventEmitterStorage storage $) {
+        assembly {
+            $.slot := PRIVATE_EVENT_EMITTER_STORAGE_LOCATION
+        }
+    }
 }
 
 contract UCEF3643 is Token, PrivateEventEmitter {
@@ -406,7 +496,7 @@ contract UCEF3643 is Token, PrivateEventEmitter {
      * @param participants Array of participant addresses for this specific event
      */
     function _emitPrivate(bytes32 eventType, bytes memory payload, address[] memory participants) internal {
-        emit PrivateEvent(_buildAllowedViewers(participants), eventType, payload);
+        _emitPrivateEvent(_buildAllowedViewers(participants), eventType, payload);
     }
 
     /**

@@ -3,6 +3,7 @@ import { ethers } from 'hardhat'
 import { Signer } from 'ethers'
 import { XUCEF } from '../../typechain-types'
 import { deployToken } from '../fixtures/deploy-token'
+import { salted } from '../fixtures/private-event'
 
 describe('XUCEF', function () {
   let factory: Signer
@@ -114,7 +115,7 @@ describe('XUCEF', function () {
       )
       await expect(token.connect(bridge1).mint(userAddress, amount))
         .to.emit(token, 'PrivateEvent')
-        .withArgs([userAddress], EVENT_TYPE_TRANSFER, payload)
+        .withArgs([userAddress], EVENT_TYPE_TRANSFER, salted(payload))
 
       const current = await token.mintingCurrentLimitOf(bridge1Address)
       expect(current).to.equal(limit - amount)
@@ -149,7 +150,7 @@ describe('XUCEF', function () {
       )
       await expect(token.connect(other).mint(userAddress, amount))
         .to.emit(token, 'PrivateEvent')
-        .withArgs([userAddress], EVENT_TYPE_TRANSFER, payload)
+        .withArgs([userAddress], EVENT_TYPE_TRANSFER, salted(payload))
 
       const current = await token.mintingCurrentLimitOf(bridge1Address)
       expect(current).to.equal(limit)
@@ -181,7 +182,7 @@ describe('XUCEF', function () {
       )
       await expect(token.connect(bridge1).burn(userAddress, burnAmount))
         .to.emit(token, 'PrivateEvent')
-        .withArgs([userAddress], EVENT_TYPE_TRANSFER, payload)
+        .withArgs([userAddress], EVENT_TYPE_TRANSFER, salted(payload))
 
       const current = await token.burningCurrentLimitOf(bridge1Address)
       expect(current).to.equal(limit - burnAmount)
@@ -209,7 +210,7 @@ describe('XUCEF', function () {
       )
       await expect(token.connect(other).burn(userAddress, burnAmount))
         .to.emit(token, 'PrivateEvent')
-        .withArgs([userAddress], EVENT_TYPE_TRANSFER, payload)
+        .withArgs([userAddress], EVENT_TYPE_TRANSFER, salted(payload))
 
       const current = await token.burningCurrentLimitOf(bridge1Address)
       expect(current).to.equal(limit)
@@ -319,7 +320,7 @@ describe('XUCEF', function () {
         )
         await expect(token.connect(user).approve(bridge1Address, allowanceAmount))
           .to.emit(token, 'PrivateEvent')
-          .withArgs([userAddress, bridge1Address], EVENT_TYPE_APPROVAL, payload)
+          .withArgs([userAddress, bridge1Address], EVENT_TYPE_APPROVAL, salted(payload))
       }
 
       const spend1 = ethers.parseEther('6')
@@ -331,7 +332,7 @@ describe('XUCEF', function () {
         )
         await expect(token.connect(bridge1).transferFrom(userAddress, otherAddress, spend1))
           .to.emit(token, 'PrivateEvent')
-          .withArgs([userAddress, otherAddress], EVENT_TYPE_TRANSFER, payload)
+          .withArgs([userAddress, otherAddress], EVENT_TYPE_TRANSFER, salted(payload))
       }
 
       const remaining = await token.connect(bridge1).allowance(userAddress, bridge1Address)

@@ -298,7 +298,7 @@ abstract contract PrivateVotes is Context, EIP712, Nonces, IERC5805, PrivateEven
         address[] memory allowedViewers = _getDelegateChangedEventViewers(delegator, fromDelegate, toDelegate);
         bytes memory payload = abi.encode(delegator, fromDelegate, toDelegate);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_DELEGATE_CHANGED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_DELEGATE_CHANGED, payload);
     }
 
     /**
@@ -348,7 +348,7 @@ abstract contract PrivateVotes is Context, EIP712, Nonces, IERC5805, PrivateEven
         address[] memory allowedViewers = _getDelegateVotesChangedEventViewers(delegateAddress, previousVotes, newVotes);
         bytes memory payload = abi.encode(delegateAddress, previousVotes, newVotes);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_DELEGATE_VOTES_CHANGED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_DELEGATE_VOTES_CHANGED, payload);
     }
 
     /**

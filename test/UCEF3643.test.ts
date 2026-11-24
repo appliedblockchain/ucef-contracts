@@ -5,6 +5,7 @@ import { UCEF3643, UCEF3643Contracts } from '@appliedblockchain/ucef-3643'
 import MockTokenImplementation from '@appliedblockchain/ucef-3643/artifacts/contracts/mocks/MockNewTokenImplementation.sol/MockNewTokenImplementation.json'
 import { MockCompliance, MockIdentityRegistry, MockTrexImplementationAuthority } from '../typechain-types'
 import { deployToken3643 } from './fixtures/deploy-3643'
+import { salted } from './fixtures/private-event'
 
 describe('UCEF3643', function () {
   let token: UCEF3643
@@ -258,7 +259,9 @@ describe('UCEF3643', function () {
         .withArgs(
           [addr1Address],
           token.EVENT_TYPE_TOKENS_FROZEN(),
-          ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [addr1Address, ethers.parseEther('1000')]),
+          salted(
+            ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [addr1Address, ethers.parseEther('1000')]),
+          ),
         )
       await expect(token.connect(addr1).transfer(addr2Address, ethers.parseEther('100'))).to.be.revertedWith(
         'Insufficient balance',
@@ -271,7 +274,9 @@ describe('UCEF3643', function () {
         .withArgs(
           [addr1Address],
           token.EVENT_TYPE_TOKENS_UNFROZEN(),
-          ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [addr1Address, ethers.parseEther('1000')]),
+          salted(
+            ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [addr1Address, ethers.parseEther('1000')]),
+          ),
         )
       await token.connect(addr1).transfer(addr2Address, ethers.parseEther('100'))
       expect(await token.connect(addr2).balanceOf(addr2Address)).to.equal(ethers.parseEther('100'))
@@ -366,7 +371,9 @@ describe('UCEF3643', function () {
         .withArgs(
           [addr1Address],
           token.EVENT_TYPE_TOKENS_UNFROZEN(),
-          ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [addr1Address, ethers.parseEther('100')]),
+          salted(
+            ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [addr1Address, ethers.parseEther('100')]),
+          ),
         )
       expect(await token.connect(addr2).balanceOf(addr2Address)).to.equal(ethers.parseEther('600'))
     })
@@ -520,9 +527,11 @@ describe('UCEF3643', function () {
           .withArgs(
             [addr1Address, addr2Address],
             token.EVENT_TYPE_APPROVAL(),
-            ethers.AbiCoder.defaultAbiCoder().encode(
-              ['address', 'address', 'uint256'],
-              [addr1Address, addr2Address, ALLOWANCE_AMOUNT],
+            salted(
+              ethers.AbiCoder.defaultAbiCoder().encode(
+                ['address', 'address', 'uint256'],
+                [addr1Address, addr2Address, ALLOWANCE_AMOUNT],
+              ),
             ),
           )
       })
