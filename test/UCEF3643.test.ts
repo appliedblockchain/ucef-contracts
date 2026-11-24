@@ -587,13 +587,64 @@ describe('UCEF3643', function () {
         expect(finalAllowance).to.equal(0)
       })
 
-      // This test is not valid for ERC-3643 (v4.1.6) implementation since arithmetic operation overflows
-      // it('Should not allow spender to transfer more than allowed amount', async function () {
-      //   const exceedAmount = ALLOWANCE_AMOUNT + 1n
-      //   await expect(token.connect(addr2).transferFrom(addr1Address, addr2Address, exceedAmount)).to.be.revertedWith(
-      //     'ERC20: insufficient allowance',
-      //   )
-      // })
+      it('Should not allow spender to transfer more than allowed amount', async function () {
+        const exceedAmount = ALLOWANCE_AMOUNT + 1n
+        await expect(token.connect(addr2).transferFrom(addr1Address, addr2Address, exceedAmount)).to.be.revertedWith(
+          'Insufficient allowance or balance',
+        )
+      })
+
+      it('Should revert with the same reason for a caller without allowance regardless of the holder balance', async function () {
+        const [, , , , outsider] = await ethers.getSigners()
+        const amounts = [1n, ethers.parseEther('999'), ethers.parseEther('1000'), ethers.parseEther('1001')]
+
+        for (const amount of amounts) {
+          await expect(token.connect(outsider).transferFrom(addr1Address, addr2Address, amount)).to.be.revertedWith(
+            'Insufficient allowance or balance',
+          )
+        }
+      })
+
+      it('Should revert with the same reason for a spender exceeding allowance regardless of the holder balance', async function () {
+        // Below the holder balance, above the allowance
+        await expect(
+          token.connect(addr2).transferFrom(addr1Address, addr2Address, ALLOWANCE_AMOUNT + 1n),
+        ).to.be.revertedWith('Insufficient allowance or balance')
+        // Above both the holder balance and the allowance
+        await expect(
+          token.connect(addr2).transferFrom(addr1Address, addr2Address, ethers.parseEther('1001')),
+        ).to.be.revertedWith('Insufficient allowance or balance')
+
+        expect(await token.connect(addr2).allowance(addr1Address, addr2Address)).to.equal(ALLOWANCE_AMOUNT)
+      })
+
+      it('Should not allow spender to transfer more than the holder free balance', async function () {
+        await token.connect(addr1).approve(addr2Address, ethers.MaxUint256)
+
+        await expect(
+          token.connect(addr2).transferFrom(addr1Address, addr2Address, ethers.parseEther('1001')),
+        ).to.be.revertedWith('Insufficient allowance or balance')
+
+        await token.connect(agent).freezePartialTokens(addr1Address, ethers.parseEther('950'))
+        await expect(
+          token.connect(addr2).transferFrom(addr1Address, addr2Address, ethers.parseEther('51')),
+        ).to.be.revertedWith('Insufficient allowance or balance')
+
+        await token.connect(addr2).transferFrom(addr1Address, addr2Address, ethers.parseEther('50'))
+        expect(await token.connect(addr1).balanceOf(addr1Address)).to.equal(ethers.parseEther('950'))
+        expect(await token.connect(addr2).balanceOf(addr2Address)).to.equal(ethers.parseEther('50'))
+      })
+
+      it('Should allow spender to transfer part of the allowance', async function () {
+        const transferAmount = ethers.parseEther('40')
+        await token.connect(addr2).transferFrom(addr1Address, addr2Address, transferAmount)
+
+        expect(await token.connect(addr1).balanceOf(addr1Address)).to.equal(ethers.parseEther('960'))
+        expect(await token.connect(addr2).balanceOf(addr2Address)).to.equal(transferAmount)
+        expect(await token.connect(addr2).allowance(addr1Address, addr2Address)).to.equal(
+          ALLOWANCE_AMOUNT - transferAmount,
+        )
+      })
 
       it('Should revert if account is frozen', async function () {
         await token.connect(agent).setAddressFrozen(addr1Address, true)
@@ -642,11 +693,10 @@ describe('UCEF3643', function () {
         // Use up the allowance
         await token.connect(addr2).transferFrom(addr1Address, addr2Address, ALLOWANCE_AMOUNT)
 
-        // This test is not valid for ERC-3643 (v4.1.6) implementation since arithmetic operation overflows
         // Try to transfer again
-        // await expect(token.connect(addr2).transferFrom(addr1Address, addr2Address, 1n)).to.be.revertedWith(
-        //   'ERC20: insufficient allowance',
-        // )
+        await expect(token.connect(addr2).transferFrom(addr1Address, addr2Address, 1n)).to.be.revertedWith(
+          'Insufficient allowance or balance',
+        )
       })
 
       it('Should not allow transfer if token is paused', async function () {
