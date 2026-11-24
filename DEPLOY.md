@@ -6,7 +6,7 @@ This guide covers the confidential ERC-20 tokens. For the confidential ERC-3643 
 
 ## Prerequisites
 
-- Node.js (v20 or higher)
+- Node.js (v22 or higher)
 - pnpm
 - Hardhat
 - Access to Silent Data credentials (for Silent Data deployment)

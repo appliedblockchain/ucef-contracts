@@ -1,7 +1,7 @@
 {
   "name": "@appliedblockchain/ucef-3643",
   "description": "Unopinionated Confidential ERC-20 Framework (UCEF) for ERC-3643",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "keywords": [
     "solidity",
     "ethereum",
