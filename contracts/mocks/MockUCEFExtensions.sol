@@ -12,7 +12,6 @@ import {IUCEF} from "@appliedblockchain/ucef/contracts/interfaces/IUCEF.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
-import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {IERC1363Receiver} from "@openzeppelin/contracts/interfaces/IERC1363Receiver.sol";
 import {IERC1363Spender} from "@openzeppelin/contracts/interfaces/IERC1363Spender.sol";
 
@@ -88,12 +87,16 @@ contract MockERC1363 is UCEFOwned, ERC1363 {
  * @dev Flash borrower that approves the repayment, so the loan emits Transfer and Approval events
  */
 contract MockFlashBorrower is IERC3156FlashBorrower {
-    function borrow(IERC3156FlashLender lender, uint256 amount) external {
-        lender.flashLoan(this, address(lender), amount, "");
+    bool private immutable _approveRepayment;
+
+    constructor(bool approveRepayment) {
+        _approveRepayment = approveRepayment;
     }
 
     function onFlashLoan(address, address token, uint256 amount, uint256 fee, bytes calldata) external returns (bytes32) {
-        IUCEF(token).approve(token, amount + fee);
+        if (_approveRepayment) {
+            IUCEF(token).approve(token, amount + fee);
+        }
         return keccak256("ERC3156FlashBorrower.onFlashLoan");
     }
 }

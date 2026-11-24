@@ -236,15 +236,25 @@ describe('Private event salts in extensions', function () {
   describe('UCEFFlashMint', function () {
     it('salts every event of a flash loan, including those the borrower triggers', async function () {
       const token = await deploy<MockUCEFFlashMint>('MockUCEFFlashMint')
-      const borrower = await deploy<MockFlashBorrower>('MockFlashBorrower')
+      const borrower = await deploy<MockFlashBorrower>('MockFlashBorrower', [true])
       const state = await setSeed(token, user, ethers.id('user seed'))
 
-      // The borrower starts the loan itself: flashLoan reads the borrower's allowance through `allowance`,
-      // which only answers to the borrower or the token
-      const receipt = await (await borrower.connect(user).borrow(await addressOf(token), AMOUNT)).wait()
+      const receipt = await (
+        await token.connect(user).flashLoan(await addressOf(borrower), await addressOf(token), AMOUNT, '0x')
+      ).wait()
 
       // The borrower has no seed, so the mint, its approval and the burn use the user's (tx.origin) seed
       expect(saltsOf(token, receipt)).to.deep.equal(chain(state, 3))
+    })
+
+    it('still requires the borrower to approve the repayment', async function () {
+      const token = await deploy<MockUCEFFlashMint>('MockUCEFFlashMint')
+      const borrower = await deploy<MockFlashBorrower>('MockFlashBorrower', [false])
+      await setSeed(token, user, ethers.id('user seed'))
+
+      await expect(
+        token.connect(user).flashLoan(await addressOf(borrower), await addressOf(token), AMOUNT, '0x'),
+      ).to.be.revertedWithCustomError(token, 'ERC20InsufficientAllowance')
     })
   })
 

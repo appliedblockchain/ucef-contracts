@@ -27,6 +27,13 @@ While the version is below 1.0.0, a minor version bump can contain breaking chan
 - **Breaking:** derived contracts emit private events through `_emitPrivateEvent`, which is not `virtual`, instead of emitting `PrivateEvent` directly.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 
+### Fixed
+
+- `UCEFFlashMint.flashLoan` reverted with `UCEFUnauthorizedBalanceAccess` unless the borrower started the loan itself.
+  `_spendAllowance` read the allowance through the public `allowance`, which only answers to the owner or the spender, and a flash loan spends the borrower's allowance to the token itself.
+  It now reads the allowance internally; the allowance is still enforced.
+  ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
+
 ## 0.1.0 - 2026-11-24
 
 ### Changed

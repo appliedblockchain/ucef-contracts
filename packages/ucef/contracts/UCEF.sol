@@ -282,10 +282,12 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
      * @param value The amount of tokens being spent
      *
      * Note: This function calls _approve internally with emitEvent=false to avoid
-     * unnecessary event emissions during transfers
+     * unnecessary event emissions during transfers. It reads the allowance directly rather than
+     * through `allowance`, which only answers to the owner or the spender: the spender is not always
+     * `msg.sender` (e.g. a flash loan spends the borrower's allowance to the token itself).
      */
     function _spendAllowance(address owner, address spender, uint256 value) internal override virtual {
-        uint256 currentAllowance = allowance(owner, spender);
+        uint256 currentAllowance = _allowance(owner, spender);
         if (currentAllowance < type(uint256).max) {
             if (currentAllowance < value) {
                 revert ERC20InsufficientAllowance(address(0), 0, 0);
