@@ -3,6 +3,12 @@ import { ethers } from 'hardhat'
 import { Signer } from 'ethers'
 import { UCEFOnlyOwnerSharable } from '../../typechain-types'
 import { deployToken } from '../fixtures/deploy-token'
+import {
+  EVENT_TYPE_SUPERVISOR_UPDATED,
+  EVENT_TYPE_TRANSFER,
+  EVENT_TYPE_VIEWER_PERMISSION_UPDATED,
+  encodePayload,
+} from '../fixtures/private-event'
 
 describe('UCEFOnlyOwnerSharable', function () {
   let token: UCEFOnlyOwnerSharable
@@ -65,10 +71,11 @@ describe('UCEFOnlyOwnerSharable', function () {
       await token.mint(user1Address, INITIAL_SUPPLY)
     })
 
-    it('Should transfer tokens between accounts and emit Transfer event with all zero addresses', async function () {
+    it('Should transfer tokens between accounts and emit a private Transfer event to supervisor, sender and receiver', async function () {
+      const payload = encodePayload(['address', 'address', 'uint256'], [user1Address, user2Address, TRANSFER_AMOUNT])
       await expect(token.connect(user1).transfer(user2Address, TRANSFER_AMOUNT))
-        .to.emit(token, 'Transfer')
-        .withArgs(ethers.ZeroAddress, ethers.ZeroAddress, 0n)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([ownerAddress, user1Address, user2Address], EVENT_TYPE_TRANSFER, payload)
 
       const user2Balance = await token.connect(user2).balanceOf(user2Address)
       expect(user2Balance).to.equal(TRANSFER_AMOUNT)
@@ -111,18 +118,20 @@ describe('UCEFOnlyOwnerSharable', function () {
 
   describe('Viewer management', function () {
     it('Should allow users to grant viewing permission', async function () {
+      const payload = encodePayload(['address', 'address', 'bool'], [user1Address, viewerAddress, true])
       await expect(token.connect(user1).grantViewer(viewerAddress))
-        .to.emit(token, 'ViewerPermissionUpdated')
-        .withArgs(user1Address, viewerAddress, true)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([ownerAddress, user1Address, viewerAddress], EVENT_TYPE_VIEWER_PERMISSION_UPDATED, payload)
 
       expect(await token.hasViewPermission(user1Address, viewerAddress)).to.be.true
     })
 
     it('Should allow users to revoke viewing permission', async function () {
       await token.connect(user1).grantViewer(viewerAddress)
+      const payload = encodePayload(['address', 'address', 'bool'], [user1Address, viewerAddress, false])
       await expect(token.connect(user1).revokeViewer(viewerAddress))
-        .to.emit(token, 'ViewerPermissionUpdated')
-        .withArgs(user1Address, viewerAddress, false)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([ownerAddress, user1Address, viewerAddress], EVENT_TYPE_VIEWER_PERMISSION_UPDATED, payload)
 
       expect(await token.hasViewPermission(user1Address, viewerAddress)).to.be.false
     })
@@ -140,9 +149,10 @@ describe('UCEFOnlyOwnerSharable', function () {
 
   describe('Supervisor management', function () {
     it('Should allow supervisor to update supervisor', async function () {
+      const payload = encodePayload(['address', 'address'], [ownerAddress, supervisorAddress])
       await expect(token.connect(owner).updateSupervisor(supervisorAddress))
-        .to.emit(token, 'SupervisorUpdated')
-        .withArgs(ownerAddress, supervisorAddress)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([ownerAddress, supervisorAddress], EVENT_TYPE_SUPERVISOR_UPDATED, payload)
 
       expect(await token.supervisor()).to.equal(supervisorAddress)
     })

@@ -57,9 +57,7 @@ describe('XUCEF', function () {
 
   describe('Lockbox', function () {
     it('only FACTORY can set lockbox and emits event', async function () {
-      await expect(token.connect(factory).setLockbox(otherAddress))
-        .to.emit(token, 'LockboxSet')
-        .withArgs(otherAddress)
+      await expect(token.connect(factory).setLockbox(otherAddress)).to.emit(token, 'LockboxSet').withArgs(otherAddress)
 
       expect(await token.lockbox()).to.equal(otherAddress)
 
@@ -89,7 +87,7 @@ describe('XUCEF', function () {
     })
 
     it('reverts when limits exceed half of uint256', async function () {
-      const tooHigh = (ethers.MaxUint256 / 2n) + 1n
+      const tooHigh = ethers.MaxUint256 / 2n + 1n
       await expect(token.connect(factory).setLimits(bridge1Address, tooHigh, 1n)).to.be.reverted
       await expect(token.connect(factory).setLimits(bridge1Address, 1n, tooHigh)).to.be.reverted
     })
@@ -112,7 +110,7 @@ describe('XUCEF', function () {
       const EVENT_TYPE_TRANSFER = ethers.id('Transfer(address,address,uint256)')
       const payload = ethers.AbiCoder.defaultAbiCoder().encode(
         ['address', 'address', 'uint256'],
-        [ethers.ZeroAddress, userAddress, amount]
+        [ethers.ZeroAddress, userAddress, amount],
       )
       await expect(token.connect(bridge1).mint(userAddress, amount))
         .to.emit(token, 'PrivateEvent')
@@ -147,7 +145,7 @@ describe('XUCEF', function () {
       const EVENT_TYPE_TRANSFER = ethers.id('Transfer(address,address,uint256)')
       const payload = ethers.AbiCoder.defaultAbiCoder().encode(
         ['address', 'address', 'uint256'],
-        [ethers.ZeroAddress, userAddress, amount]
+        [ethers.ZeroAddress, userAddress, amount],
       )
       await expect(token.connect(other).mint(userAddress, amount))
         .to.emit(token, 'PrivateEvent')
@@ -179,7 +177,7 @@ describe('XUCEF', function () {
       const EVENT_TYPE_TRANSFER = ethers.id('Transfer(address,address,uint256)')
       const payload = ethers.AbiCoder.defaultAbiCoder().encode(
         ['address', 'address', 'uint256'],
-        [userAddress, ethers.ZeroAddress, burnAmount]
+        [userAddress, ethers.ZeroAddress, burnAmount],
       )
       await expect(token.connect(bridge1).burn(userAddress, burnAmount))
         .to.emit(token, 'PrivateEvent')
@@ -207,7 +205,7 @@ describe('XUCEF', function () {
       const EVENT_TYPE_TRANSFER = ethers.id('Transfer(address,address,uint256)')
       const payload = ethers.AbiCoder.defaultAbiCoder().encode(
         ['address', 'address', 'uint256'],
-        [userAddress, ethers.ZeroAddress, burnAmount]
+        [userAddress, ethers.ZeroAddress, burnAmount],
       )
       await expect(token.connect(other).burn(userAddress, burnAmount))
         .to.emit(token, 'PrivateEvent')
@@ -317,7 +315,7 @@ describe('XUCEF', function () {
         const EVENT_TYPE_APPROVAL = ethers.id('Approval(address,address,uint256)')
         const payload = ethers.AbiCoder.defaultAbiCoder().encode(
           ['address', 'address', 'uint256'],
-          [userAddress, bridge1Address, allowanceAmount]
+          [userAddress, bridge1Address, allowanceAmount],
         )
         await expect(token.connect(user).approve(bridge1Address, allowanceAmount))
           .to.emit(token, 'PrivateEvent')
@@ -329,7 +327,7 @@ describe('XUCEF', function () {
         const EVENT_TYPE_TRANSFER = ethers.id('Transfer(address,address,uint256)')
         const payload = ethers.AbiCoder.defaultAbiCoder().encode(
           ['address', 'address', 'uint256'],
-          [userAddress, otherAddress, spend1]
+          [userAddress, otherAddress, spend1],
         )
         await expect(token.connect(bridge1).transferFrom(userAddress, otherAddress, spend1))
           .to.emit(token, 'PrivateEvent')
@@ -339,12 +337,9 @@ describe('XUCEF', function () {
       const remaining = await token.connect(bridge1).allowance(userAddress, bridge1Address)
       expect(remaining).to.equal(allowanceAmount - spend1)
 
-      await expect(token.connect(bridge1).transferFrom(userAddress, otherAddress, allowanceAmount))
-        .to.be.reverted
+      await expect(token.connect(bridge1).transferFrom(userAddress, otherAddress, allowanceAmount)).to.be.reverted
 
       expect(await token.totalSupply()).to.equal(minted)
     })
   })
 })
-
-

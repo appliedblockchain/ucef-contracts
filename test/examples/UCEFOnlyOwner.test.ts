@@ -3,6 +3,7 @@ import { ethers } from 'hardhat'
 import { Signer } from 'ethers'
 import { UCEFOnlyOwner } from '../../typechain-types'
 import { deployToken, transfer } from '../fixtures/deploy-token'
+import { EVENT_TYPE_APPROVAL, EVENT_TYPE_TRANSFER, encodePayload } from '../fixtures/private-event'
 describe('UCEFOnlyOwner', function () {
   let token: UCEFOnlyOwner
   let owner: Signer
@@ -57,12 +58,13 @@ describe('UCEFOnlyOwner', function () {
       await transfer(token.connect(owner), user1Address, TRANSFER_AMOUNT)
     })
 
-    it('Should transfer tokens between accounts and emit Transfer event with all zero addresses', async function () {
+    it('Should transfer tokens between accounts and emit a private Transfer event to sender and receiver', async function () {
       // Transfer from user1 to user2
       const halfAmount = TRANSFER_AMOUNT / 2n
+      const payload = encodePayload(['address', 'address', 'uint256'], [user1Address, user2Address, halfAmount])
       await expect(token.connect(user1).transfer(user2Address, halfAmount))
-        .to.emit(token, 'Transfer')
-        .withArgs(ethers.ZeroAddress, ethers.ZeroAddress, 0n)
+        .to.emit(token, 'PrivateEvent')
+        .withArgs([user1Address, user2Address], EVENT_TYPE_TRANSFER, payload)
     })
 
     it("Should fail if sender doesn't have enough tokens", async function () {
@@ -141,10 +143,11 @@ describe('UCEFOnlyOwner', function () {
         expect(allowance).to.equal(ALLOWANCE_AMOUNT)
       })
 
-      it('Should emit Approval event with zero addresses when setting allowance', async function () {
+      it('Should emit a private Approval event to owner and spender when setting allowance', async function () {
+        const payload = encodePayload(['address', 'address', 'uint256'], [user1Address, user2Address, ALLOWANCE_AMOUNT])
         await expect(token.connect(user1).approve(user2Address, ALLOWANCE_AMOUNT))
-          .to.emit(token, 'Approval')
-          .withArgs(ethers.ZeroAddress, ethers.ZeroAddress, 0n)
+          .to.emit(token, 'PrivateEvent')
+          .withArgs([user1Address, user2Address], EVENT_TYPE_APPROVAL, payload)
       })
 
       it('Should not allow setting allowance for zero address spender', async function () {
