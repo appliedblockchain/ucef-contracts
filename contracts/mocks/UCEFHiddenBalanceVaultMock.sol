@@ -10,7 +10,7 @@ import {IUCEF} from "@appliedblockchain/ucef/contracts/interfaces/IUCEF.sol";
  * instead of reverting.
  */
 contract UCEFHiddenBalanceVaultMock is ERC4626 {
-    constructor(IUCEF asset_) UCEF("UCEF Hidden Balance Vault", "uHV") ERC4626(asset_) {}
+    constructor(IUCEF asset_) UCEF("UCEF Hidden Balance Vault", "uHV") ERC4626(asset_, bytes32(0)) {}
 
     function _authorizeBalance(address account) internal view override returns (bool) {
         return msg.sender == account;
