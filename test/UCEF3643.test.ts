@@ -261,7 +261,7 @@ describe('UCEF3643', function () {
           ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [addr1Address, ethers.parseEther('1000')]),
         )
       await expect(token.connect(addr1).transfer(addr2Address, ethers.parseEther('100'))).to.be.revertedWith(
-        'Insufficient Balance',
+        'Insufficient balance',
       )
 
       // Unfreeze tokens

@@ -169,7 +169,7 @@ contract UCEF3643 is Token, PrivateEventEmitter {
      */
     function transfer(address _to, uint256 _amount) public override whenNotPaused returns (bool) {
         require(!_frozen[_to] && !_frozen[msg.sender], "wallet is frozen");
-        require(_amount <= _balanceOf(msg.sender) - (_frozenTokens[msg.sender]), "Insufficient Balance");
+        require(_amount <= _balanceOf(msg.sender) - (_frozenTokens[msg.sender]), "Insufficient balance");
         if (_tokenIdentityRegistry.isVerified(_to) && _tokenCompliance.canTransfer(msg.sender, _to, _amount)) {
             _transfer(msg.sender, _to, _amount);
             _tokenCompliance.transferred(msg.sender, _to, _amount);

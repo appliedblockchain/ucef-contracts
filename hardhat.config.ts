@@ -13,7 +13,20 @@ Config()
 const { SILENTDATA_RPC_URL, PRIVATE_KEY, SILENTDATA_CHAIN_ID } = process.env
 
 // The remote network is only configured when its settings are present, so local
-// compile and test runs do not need them.
+// compile and test runs do not need them. When it is selected without them, name
+// the missing settings, as Hardhat itself only reports that the network is not defined.
+const missingSilentdataSettings = Object.entries({ SILENTDATA_RPC_URL, PRIVATE_KEY, SILENTDATA_CHAIN_ID })
+  .filter(([, value]) => !value)
+  .map(([name]) => name)
+const networkFlagIndex = process.argv.indexOf('--network')
+const selectedNetwork = networkFlagIndex === -1 ? process.env.HARDHAT_NETWORK : process.argv[networkFlagIndex + 1]
+
+if (selectedNetwork === 'silentdata' && missingSilentdataSettings.length > 0) {
+  console.warn(
+    `The silentdata network is not configured because these environment variables are not set: ${missingSilentdataSettings.join(', ')}`,
+  )
+}
+
 const silentdataNetwork =
   SILENTDATA_RPC_URL && PRIVATE_KEY && SILENTDATA_CHAIN_ID
     ? {
