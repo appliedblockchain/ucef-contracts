@@ -2,13 +2,19 @@ import {
   AbiCoder,
   BaseContract,
   BytesLike,
+  Log,
   Signer,
+  TransactionReceipt,
+  ZeroHash,
+  concat,
   dataLength,
   dataSlice,
   hexlify,
   id,
   isHexString,
+  keccak256,
   randomBytes,
+  toUtf8Bytes,
 } from 'ethers'
 import { ethers } from 'hardhat'
 
@@ -21,7 +27,7 @@ export const EVENT_TYPE_SUPERVISOR_UPDATED = id('SupervisorUpdated(address,addre
 const SALT_LENGTH = 32
 
 /**
- * Matches a PrivateEvent payload made of `payload` followed by a 32-byte salt.
+ * Matches a PrivateEvent payload made of `payload` followed by a non-zero 32-byte salt.
  * Use it as an argument of `withArgs`: the salt is derived from the sender's secret seed.
  */
 export function salted(payload: BytesLike) {
@@ -31,7 +37,51 @@ export function salted(payload: BytesLike) {
     typeof actual === 'string' &&
     isHexString(actual) &&
     dataLength(actual) === length + SALT_LENGTH &&
-    dataSlice(actual, 0, length) === expected
+    dataSlice(actual, 0, length) === expected &&
+    dataSlice(actual, length) !== ZeroHash
+}
+
+/**
+ * Salt state a token stores for `account` when it sets `seed`, on top of its `previous` state:
+ * keccak256(abi.encode(token, account, previous, seed))
+ */
+export function privateEventSeedState(token: string, account: string, seed: BytesLike, previous: BytesLike = ZeroHash) {
+  return keccak256(
+    AbiCoder.defaultAbiCoder().encode(['address', 'address', 'bytes32', 'bytes32'], [token, account, previous, seed]),
+  )
+}
+
+/**
+ * Salt of the next private event salted from `state`: keccak256(state, "salt")
+ */
+export function saltOf(state: BytesLike) {
+  return keccak256(concat([state, toUtf8Bytes('salt')]))
+}
+
+/**
+ * State that replaces `state` once an event used it: keccak256(state, "next")
+ */
+export function nextState(state: BytesLike) {
+  return keccak256(concat([state, toUtf8Bytes('next')]))
+}
+
+/**
+ * Payloads of the PrivateEvents `contract` emitted in a transaction, optionally of one event type
+ */
+export function privateEventPayloads(contract: BaseContract, receipt: TransactionReceipt | null, eventType?: string) {
+  const address = contract.target.toString().toLowerCase()
+  return receipt!.logs
+    .filter((log: Log) => log.address.toLowerCase() === address)
+    .map((log: Log) => contract.interface.parseLog(log))
+    .filter((parsed) => parsed?.name === 'PrivateEvent' && (!eventType || parsed.args.eventType === eventType))
+    .map((parsed) => parsed!.args.payload as string)
+}
+
+/**
+ * Salt at the end of a PrivateEvent payload
+ */
+export function saltOfPayload(payload: string) {
+  return dataSlice(payload, dataLength(payload) - SALT_LENGTH)
 }
 
 /**

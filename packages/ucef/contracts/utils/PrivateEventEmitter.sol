@@ -14,14 +14,21 @@ pragma solidity ^0.8.24;
  *
  * - Each account sets its seed once with `setPrivateEventSeed`. The call's input is only
  *   visible to the sender on Silent Data, and the seed has no getter.
- * - The seed ratchets on every event: the event gets salt = keccak256(seed, "salt") and the
- *   seed becomes keccak256(seed, "next"). Seeing a salt reveals nothing about the seed, and a
- *   leaked seed (e.g. through a malicious upgrade) only exposes later events, not earlier ones.
- *   Setting a new seed stops a known leak.
- * - The seed used is that of `msg.sender` or, for contracts that cannot set one (routers,
- *   vaults), that of `tx.origin`. If neither has a seed, the call reverts.
+ * - The contract does not store the seed as given but keccak256(token, account, previous
+ *   state, seed). Setting the same value again, or on another token, never restarts a salt
+ *   sequence that was already used.
+ * - The stored state ratchets on every event: the event gets salt = keccak256(state, "salt")
+ *   and the state becomes keccak256(state, "next"). Seeing a salt reveals nothing about the
+ *   state, and a leaked state (e.g. through a malicious upgrade) only exposes later events,
+ *   not earlier ones. Setting a new seed stops a known leak.
+ * - The state used is that of `msg.sender` or, for contracts that have none, that of
+ *   `tx.origin`. If neither has one, the call reverts. Contracts that move tokens for other
+ *   accounts (vaults, wrappers, bridges) should set their own seed: otherwise the salts come
+ *   from whoever sent the transaction (a relayer or bundler), who can then confirm guesses of
+ *   those events, and the call reverts when that sender has no seed either.
  * - Events emitted while the contract is being constructed carry a zero salt, as no account
- *   can have a seed yet.
+ *   can have a seed yet. Do not emit private events from constructors or initializers (e.g.
+ *   an initial-supply mint): mint after deployment instead.
  *
  * Payload layout: `abi.encode(<event arguments>) ++ salt`. Decoders that ignore trailing
  * data keep working; the salt is always the last 32 bytes.
@@ -65,15 +72,14 @@ abstract contract PrivateEventEmitter {
      * @param seed Secret random value, must not be zero
      */
     function setPrivateEventSeed(bytes32 seed) external {
-        if (seed == bytes32(0)) {
-            revert PrivateEventZeroSeed();
-        }
-        _getPrivateEventEmitterStorage().seeds[msg.sender] = seed;
+        _setPrivateEventSeed(msg.sender, seed);
     }
 
     /**
      * @notice Whether the caller has set a seed
-     * @dev Only answers for `msg.sender`, so it does not show which accounts use the contract
+     * @dev Only answers for `msg.sender`, so arbitrary callers cannot query other accounts. A contract
+     * the account calls can still learn it, e.g. by triggering a private event from a contract without
+     * a seed and catching `PrivateEventSeedNotSet`.
      */
     function hasPrivateEventSeed() external view returns (bool) {
         return _getPrivateEventEmitterStorage().seeds[msg.sender] != bytes32(0);
@@ -86,12 +92,24 @@ abstract contract PrivateEventEmitter {
      * @param eventType The keccak256 hash of the original event signature
      * @param payload The ABI-encoded event arguments
      */
-    function _emitPrivateEvent(address[] memory allowedViewers, bytes32 eventType, bytes memory payload) internal virtual {
+    function _emitPrivateEvent(address[] memory allowedViewers, bytes32 eventType, bytes memory payload) internal {
         emit PrivateEvent(allowedViewers, eventType, bytes.concat(payload, _nextPrivateEventSalt()));
     }
 
     /**
-     * @dev Returns the salt for the next private event and ratchets the seed it came from
+     * @dev Mixes `seed` into the salt state of `account`. Binding the token, the account and the
+     * previous state means that reusing a seed value never replays salts.
+     */
+    function _setPrivateEventSeed(address account, bytes32 seed) internal {
+        if (seed == bytes32(0)) {
+            revert PrivateEventZeroSeed();
+        }
+        mapping(address => bytes32) storage seeds = _getPrivateEventEmitterStorage().seeds;
+        seeds[account] = keccak256(abi.encode(address(this), account, seeds[account], seed));
+    }
+
+    /**
+     * @dev Returns the salt for the next private event and ratchets the state it came from
      */
     function _nextPrivateEventSalt() private returns (bytes32) {
         // No account can have set a seed while the contract is being constructed

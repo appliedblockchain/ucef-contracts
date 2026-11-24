@@ -1,12 +1,19 @@
 import { expect } from 'chai'
 import { ethers } from 'hardhat'
-import { Log, Signer, TransactionReceipt, ZeroHash, concat, keccak256, toUtf8Bytes } from 'ethers'
+import { Signer, TransactionReceipt, ZeroHash, concat } from 'ethers'
 import { MockPrivateEventCaller, UCEFOnlyOwner, UCEFOnlyOwnerAndRegulator } from '../../typechain-types'
-import { EVENT_TYPE_TRANSFER } from '../fixtures/private-event'
+import {
+  EVENT_TYPE_TRANSFER,
+  nextState,
+  privateEventPayloads as payloadsOf,
+  privateEventSeedState,
+  saltOf,
+} from '../fixtures/private-event'
 
 describe('PrivateEventEmitter seed', function () {
   const coder = ethers.AbiCoder.defaultAbiCoder()
   const AMOUNT = 10n
+  const OWNER_SEED = ethers.id('owner seed')
 
   let token: UCEFOnlyOwner
   let caller: MockPrivateEventCaller
@@ -17,20 +24,17 @@ describe('PrivateEventEmitter seed', function () {
   let senderAddress: string
   let recipientAddress: string
   let callerAddress: string
+  let tokenAddress: string
 
-  // Salt of the next event and the seed that replaces it: keccak256(seed, "salt"), keccak256(seed, "next")
-  const saltOf = (seed: string) => keccak256(concat([seed, toUtf8Bytes('salt')]))
-  const nextSeed = (seed: string) => keccak256(concat([seed, toUtf8Bytes('next')]))
+  // Salt state the token stores for `account` when it first sets `seed`
+  const stateOf = (account: string, seed: string) => privateEventSeedState(tokenAddress, account, seed)
 
   function transferPayload(from: string, to: string, value: bigint) {
     return coder.encode(['address', 'address', 'uint256'], [from, to, value])
   }
 
   function privateEventPayloads(receipt: TransactionReceipt | null) {
-    return receipt!.logs
-      .map((log: Log) => token.interface.parseLog(log))
-      .filter((parsed) => parsed?.name === 'PrivateEvent')
-      .map((parsed) => parsed!.args.payload as string)
+    return payloadsOf(token, receipt)
   }
 
   async function setSeed(signer: Signer, seed: string) {
@@ -46,13 +50,14 @@ describe('PrivateEventEmitter seed', function () {
     const Token = await ethers.getContractFactory('UCEFOnlyOwner')
     token = (await Token.deploy()) as unknown as UCEFOnlyOwner
     await token.waitForDeployment()
+    tokenAddress = await token.getAddress()
 
     const Caller = await ethers.getContractFactory('MockPrivateEventCaller')
     caller = (await Caller.deploy()) as unknown as MockPrivateEventCaller
     await caller.waitForDeployment()
     callerAddress = await caller.getAddress()
 
-    await setSeed(owner, ethers.hexlify(ethers.randomBytes(32)))
+    await setSeed(owner, OWNER_SEED)
     await token.mint(senderAddress, 1000n)
     await token.mint(callerAddress, 1000n)
   })
@@ -98,12 +103,14 @@ describe('PrivateEventEmitter seed', function () {
       const second = privateEventPayloads(await (await token.connect(sender).transfer(recipientAddress, AMOUNT)).wait())
 
       const payload = transferPayload(senderAddress, recipientAddress, AMOUNT)
-      expect(first).to.deep.equal([concat([payload, saltOf(seed)])])
-      expect(second).to.deep.equal([concat([payload, saltOf(nextSeed(seed))])])
+      const state = stateOf(senderAddress, seed)
+      expect(first).to.deep.equal([concat([payload, saltOf(state)])])
+      expect(second).to.deep.equal([concat([payload, saltOf(nextState(state))])])
     })
 
-    it('restarts the ratchet when the seed is replaced', async function () {
-      await setSeed(sender, ethers.id('leaked seed'))
+    it('mixes a replacement seed into the current state', async function () {
+      const leaked = ethers.id('leaked seed')
+      await setSeed(sender, leaked)
       await token.connect(sender).transfer(recipientAddress, AMOUNT)
 
       const seed = ethers.id('new seed')
@@ -112,7 +119,42 @@ describe('PrivateEventEmitter seed', function () {
         await (await token.connect(sender).transfer(recipientAddress, AMOUNT)).wait(),
       )
 
-      expect(payloads).to.deep.equal([concat([transferPayload(senderAddress, recipientAddress, AMOUNT), saltOf(seed)])])
+      const state = privateEventSeedState(tokenAddress, senderAddress, seed, nextState(stateOf(senderAddress, leaked)))
+      expect(payloads).to.deep.equal([
+        concat([transferPayload(senderAddress, recipientAddress, AMOUNT), saltOf(state)]),
+      ])
+    })
+
+    it('never replays salts when the same seed is set again', async function () {
+      const seed = ethers.id('reused seed')
+      await setSeed(sender, seed)
+      const first = privateEventPayloads(await (await token.connect(sender).transfer(recipientAddress, AMOUNT)).wait())
+
+      await setSeed(sender, seed)
+      const second = privateEventPayloads(await (await token.connect(sender).transfer(recipientAddress, AMOUNT)).wait())
+
+      expect(second[0]).to.not.equal(first[0])
+    })
+
+    it('derives different salts on two tokens from the same seed', async function () {
+      const Token = await ethers.getContractFactory('UCEFOnlyOwner')
+      const other = (await Token.deploy()) as unknown as UCEFOnlyOwner
+      await other.waitForDeployment()
+      await (await other.setPrivateEventSeed(ethers.id('owner seed'))).wait()
+      await other.mint(senderAddress, 1000n)
+
+      const seed = ethers.id('shared seed')
+      await setSeed(sender, seed)
+      await (await other.connect(sender).setPrivateEventSeed(seed)).wait()
+
+      const onToken = privateEventPayloads(
+        await (await token.connect(sender).transfer(recipientAddress, AMOUNT)).wait(),
+      )
+      const onOther = payloadsOf(other, await (await other.connect(sender).transfer(recipientAddress, AMOUNT)).wait())
+
+      expect(onToken).to.have.length(1)
+      expect(onOther).to.have.length(1)
+      expect(onOther[0]).to.not.equal(onToken[0])
     })
 
     it('falls back to the seed of tx.origin for contract senders without one', async function () {
@@ -123,9 +165,10 @@ describe('PrivateEventEmitter seed', function () {
         await (await caller.connect(sender).transferTwice(await token.getAddress(), recipientAddress, 1n, 2n)).wait(),
       )
 
+      const state = stateOf(senderAddress, seed)
       expect(payloads).to.deep.equal([
-        concat([transferPayload(callerAddress, recipientAddress, 1n), saltOf(seed)]),
-        concat([transferPayload(callerAddress, recipientAddress, 2n), saltOf(nextSeed(seed))]),
+        concat([transferPayload(callerAddress, recipientAddress, 1n), saltOf(state)]),
+        concat([transferPayload(callerAddress, recipientAddress, 2n), saltOf(nextState(state))]),
       ])
     })
 
@@ -138,9 +181,10 @@ describe('PrivateEventEmitter seed', function () {
         await (await caller.connect(sender).transferTwice(await token.getAddress(), recipientAddress, 1n, 2n)).wait(),
       )
 
+      const state = stateOf(callerAddress, callerSeed)
       expect(payloads).to.deep.equal([
-        concat([transferPayload(callerAddress, recipientAddress, 1n), saltOf(callerSeed)]),
-        concat([transferPayload(callerAddress, recipientAddress, 2n), saltOf(nextSeed(callerSeed))]),
+        concat([transferPayload(callerAddress, recipientAddress, 1n), saltOf(state)]),
+        concat([transferPayload(callerAddress, recipientAddress, 2n), saltOf(nextState(state))]),
       ])
     })
 
@@ -155,10 +199,7 @@ describe('PrivateEventEmitter seed', function () {
       const regulated = (await Token.deploy()) as unknown as UCEFOnlyOwnerAndRegulator
       const receipt = await regulated.deploymentTransaction()!.wait()
 
-      const payloads = receipt!.logs
-        .map((log: Log) => regulated.interface.parseLog(log))
-        .filter((parsed) => parsed?.name === 'PrivateEvent')
-        .map((parsed) => parsed!.args.payload as string)
+      const payloads = payloadsOf(regulated, receipt)
 
       expect(payloads).to.deep.equal([
         concat([coder.encode(['address', 'address'], [ethers.ZeroAddress, ownerAddress]), ZeroHash]),
@@ -166,15 +207,15 @@ describe('PrivateEventEmitter seed', function () {
     })
 
     it('salts the transfer event of a mint with the seed of the minter', async function () {
-      const seed = ethers.id('minter seed')
-      await setSeed(owner, seed)
+      // The two mints in beforeEach used the first two states
+      const state = nextState(nextState(stateOf(ownerAddress, OWNER_SEED)))
 
       await expect(token.mint(recipientAddress, AMOUNT))
         .to.emit(token, 'PrivateEvent')
         .withArgs(
           [recipientAddress],
           EVENT_TYPE_TRANSFER,
-          concat([transferPayload(ethers.ZeroAddress, recipientAddress, AMOUNT), saltOf(seed)]),
+          concat([transferPayload(ethers.ZeroAddress, recipientAddress, AMOUNT), saltOf(state)]),
         )
     })
   })

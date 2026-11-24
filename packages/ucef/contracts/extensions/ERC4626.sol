@@ -103,11 +103,20 @@ abstract contract ERC4626 is UCEF, IERC4626 {
 
     /**
      * @dev Set the underlying asset contract. This must be an ERC20-compatible contract (ERC-20 or ERC-777).
+     *
+     * `assetSeed` is the vault's private event seed on the asset, or zero to set none. The asset's
+     * transfers into and out of the vault are sent by the vault, so their salts come from this seed.
+     * Without it they come from `tx.origin`: a relayer or bundler sending the transaction could
+     * confirm them, and deposits and withdrawals revert when it has no seed on the asset.
+     * It must be random and only known to the deployer, never derived from on-chain data.
      */
-    constructor(IUCEF asset_) {
+    constructor(IUCEF asset_, bytes32 assetSeed) {
         (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(asset_);
         _underlyingDecimals = success ? assetDecimals : 18;
         _asset = asset_;
+        if (assetSeed != bytes32(0)) {
+            asset_.setPrivateEventSeed(assetSeed);
+        }
     }
 
     /**

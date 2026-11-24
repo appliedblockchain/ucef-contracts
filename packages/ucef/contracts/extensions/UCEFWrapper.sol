@@ -31,11 +31,22 @@ abstract contract UCEFWrapper is UCEF {
      */
     error ERC20InvalidUnderlying(address token);
 
-    constructor(IUCEF underlyingToken) {
+    /**
+     * @dev `underlyingSeed` is the wrapper's private event seed on the underlying token, or zero to
+     * set none. The underlying transfers into and out of the wrapper are sent by the wrapper, so their
+     * salts come from this seed. Without it they come from `tx.origin`: a relayer or bundler sending
+     * the transaction could confirm them, and deposits and withdrawals revert when it has no seed on
+     * the underlying token. It must be random and only known to the deployer, never derived from
+     * on-chain data.
+     */
+    constructor(IUCEF underlyingToken, bytes32 underlyingSeed) {
         if (address(underlyingToken) == address(this)) {
             revert ERC20InvalidUnderlying(address(this));
         }
         _underlying = underlyingToken;
+        if (underlyingSeed != bytes32(0)) {
+            underlyingToken.setPrivateEventSeed(underlyingSeed);
+        }
     }
 
     /**

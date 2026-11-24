@@ -14,9 +14,15 @@ import {IIdentityRegistry} from "@tokenysolutions/t-rex/contracts/registry/inter
  * Salted payloads (same scheme as the PrivateEventEmitter of the ucef package):
  * every payload ends with a 32-byte salt derived from a secret seed of the account that
  * triggered it (`msg.sender`, else `tx.origin`), so a guessed payload cannot be confirmed
- * against the public block hash. Accounts set their seed once with `setPrivateEventSeed`;
- * it ratchets on every event, so a leaked seed does not expose earlier events. Emitting a
- * private event reverts when neither account has a seed.
+ * against the public block hash. Accounts set their seed once with `setPrivateEventSeed`.
+ * The token stores keccak256(token, account, previous state, seed), so reusing a seed value
+ * never replays salts, and the state ratchets on every event, so a leaked state does not
+ * expose earlier events. Emitting a private event reverts when neither account has a seed.
+ * Contract agents should set their own seed, so the salts of what they emit do not come from
+ * whoever sent the transaction.
+ *
+ * Events emitted while the token is being constructed, including from `init` (which runs in
+ * the proxy constructor), carry a zero salt: do not emit private events from `init`.
  *
  * The seeds live at a fixed ERC-7201 slot, so they do not shift the storage layout of
  * upgradeable tokens. Whoever can upgrade the token can deploy an implementation that
@@ -63,12 +69,15 @@ abstract contract PrivateEventEmitter {
         if (seed == bytes32(0)) {
             revert PrivateEventZeroSeed();
         }
-        _getPrivateEventEmitterStorage().seeds[msg.sender] = seed;
+        mapping(address => bytes32) storage seeds = _getPrivateEventEmitterStorage().seeds;
+        seeds[msg.sender] = keccak256(abi.encode(address(this), msg.sender, seeds[msg.sender], seed));
     }
 
     /**
      * @notice Whether the caller has set a seed
-     * @dev Only answers for `msg.sender`, so it does not show which accounts use the token
+     * @dev Only answers for `msg.sender`, so arbitrary callers cannot query other accounts. A contract
+     * the account calls can still learn it, e.g. by triggering a private event from a contract without
+     * a seed and catching `PrivateEventSeedNotSet`.
      */
     function hasPrivateEventSeed() external view returns (bool) {
         return _getPrivateEventEmitterStorage().seeds[msg.sender] != bytes32(0);
@@ -82,8 +91,8 @@ abstract contract PrivateEventEmitter {
     }
 
     /**
-     * @dev Returns the salt for the next private event and ratchets the seed it came from:
-     * salt = keccak256(seed, "salt"), next seed = keccak256(seed, "next")
+     * @dev Returns the salt for the next private event and ratchets the state it came from:
+     * salt = keccak256(state, "salt"), next state = keccak256(state, "next")
      */
     function _nextPrivateEventSalt() private returns (bytes32) {
         // No account can have set a seed while the token is being constructed

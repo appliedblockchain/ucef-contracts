@@ -26,6 +26,11 @@ contract XUCEF is UCEFOwned, Ownable, IXERC20, ERC20Permit {
     address public immutable FACTORY;
 
     /**
+     * @notice Thrown when a private event seed is registered for an address that is neither a bridge nor the lockbox
+     */
+    error XUCEF_NotBridge(address bridge);
+
+    /**
      * @notice The address of the lockbox contract
      */
     address public lockbox;
@@ -105,6 +110,25 @@ contract XUCEF is UCEFOwned, Ownable, IXERC20, ERC20Permit {
         _changeMinterLimit(_bridge, _mintingLimit);
         _changeBurnerLimit(_bridge, _burningLimit);
         emit BridgeLimitsSet(_mintingLimit, _burningLimit, _bridge);
+    }
+
+    /**
+     * @notice Registers the private event seed of a bridge (or the lockbox) that cannot set one itself
+     * @dev Only callable by the owner, for an address with limits set or the lockbox. Mints and burns are sent by
+     *      the bridge, so their salts come from its seed; without one they come from `tx.origin`, so a permissionless
+     *      relayer could confirm them, and they revert when the relayer has no seed. The seed is mixed into the
+     *      bridge's current state, so it does not reveal a seed the bridge set itself. The owner knows the salts it
+     *      registers, so the seed must be random, kept secret and never derived from on-chain data.
+     * @param _bridge The bridge whose seed is being set
+     * @param _seed Secret random value, must not be zero
+     */
+    function setBridgePrivateEventSeed(address _bridge, bytes32 _seed) external onlyOwner {
+        bool _isBridge = bridges[_bridge].minterParams.maxLimit != 0 || bridges[_bridge].burnerParams.maxLimit != 0;
+        if (_bridge == address(0) || (_bridge != lockbox && !_isBridge)) {
+            revert XUCEF_NotBridge(_bridge);
+        }
+
+        _setPrivateEventSeed(_bridge, _seed);
     }
 
     /**
