@@ -15,3 +15,4 @@ While the version is below 1.0.0, a minor version bump can contain breaking chan
   ([#5](https://github.com/appliedblockchain/ucef-contracts/pull/5))
 - **Breaking:** `transfer` that exceeds the sender's free balance now reverts with `"Insufficient balance"` instead of `"Insufficient Balance"`, matching the casing of the `transferFrom` revert reason.
   Integrations that match on the revert reason string need to be updated.
+  ([#9](https://github.com/appliedblockchain/ucef-contracts/pull/9))
