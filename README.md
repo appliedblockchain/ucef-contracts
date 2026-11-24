@@ -55,9 +55,24 @@ UCEF replaces the standard `Transfer` and `Approval` events with a `PrivateEvent
 
 - **allowedViewers**: the addresses that can view the event
 - **eventType**: the hash of the original event signature, for example `Transfer(address,address,uint256)`
-- **payload**: the ABI-encoded event arguments
+- **payload**: the ABI-encoded event arguments, followed by a 32-byte salt (see below)
 
 By default, only the sender and the receiver can view a transfer, and only the owner and the spender can view an approval. A token can change the viewers by overriding `_getTransferEventViewers` and `_getApprovalEventViewers`.
+
+Contracts that emit their own private events should call `_emitPrivateEvent` rather than emit `PrivateEvent` directly, so the payload is salted.
+
+### Salted payloads
+
+A block's receipts are committed in its public `receiptsRoot` and block hash. Without randomness, anyone who guesses a payload (a token, sender, receiver and amount) can rebuild the receipt and confirm the guess against the block hash. So every payload ends with a 32-byte salt, derived from a secret seed of the account that triggered the event:
+
+- Each account calls `setPrivateEventSeed(bytes32 seed)` once per token, with 32 random bytes, before its first private event. The call's input is only visible to the sender on Silent Data, and no getter or event exposes the seed. `hasPrivateEventSeed()` tells the caller whether it has set one. The Silent Data SDK sets the seed automatically.
+- The seed ratchets on every event: the event gets `keccak256(seed, "salt")` and the seed becomes `keccak256(seed, "next")`. Seeing a salt reveals nothing about the seed, and a leaked seed only exposes later events, not earlier ones. Calling `setPrivateEventSeed` again replaces the seed and stops a known leak.
+- The seed of `msg.sender` is used, or that of `tx.origin` if `msg.sender` has none, so contracts that cannot set a seed (routers, vaults, bridges) still work. Smart accounts and contracts that know about UCEF should set their own seed. If neither account has a seed, the call reverts with `PrivateEventSeedNotSet`. Receiving tokens does not need a seed.
+- Events emitted while the token is being constructed carry a zero salt, since no account can have a seed yet.
+
+The seeds are stored in the token like balances, and like balances they are only as private as the token's code: whoever can upgrade a token can deploy code that reads them, and would then be able to confirm every later event of every account. Issuers of upgradeable tokens are trusted with this.
+
+Decoders that ignore trailing data still decode the payload with the original event signature; the salt is always the last 32 bytes.
 
 ### Minting policy
 
