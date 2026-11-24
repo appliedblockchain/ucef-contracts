@@ -88,14 +88,18 @@ abstract contract ERC4626 is UCEF, IERC4626 {
     error ERC4626ExceededMaxMint(address receiver, uint256 shares, uint256 max);
 
     /**
-     * @dev Attempted to withdraw more assets than the max amount for `receiver`.
+     * @dev Attempted to withdraw more assets than the max amount for `owner`.
+     * Replaces ERC4626ExceededMaxWithdraw, which would include the max amount, derived from the balance of `owner`,
+     * in the revert data and return it to callers not authorized to view that balance, such as an approved spender.
      */
-    error ERC4626ExceededMaxWithdraw(address owner, uint256 assets, uint256 max);
+    error UCEFExceededMaxWithdraw(address owner, uint256 assets);
 
     /**
-     * @dev Attempted to redeem more shares than the max amount for `receiver`.
+     * @dev Attempted to redeem more shares than the max amount for `owner`.
+     * Replaces ERC4626ExceededMaxRedeem, which would include the max amount, the balance of `owner`, in the revert
+     * data and return it to callers not authorized to view that balance, such as an approved spender.
      */
-    error ERC4626ExceededMaxRedeem(address owner, uint256 shares, uint256 max);
+    error UCEFExceededMaxRedeem(address owner, uint256 shares);
 
     /**
      * @dev Set the underlying asset contract. This must be an ERC20-compatible contract (ERC-20 or ERC-777).
@@ -163,14 +167,22 @@ abstract contract ERC4626 is UCEF, IERC4626 {
         return type(uint256).max;
     }
 
-    /** @dev See {IERC4626-maxWithdraw}. */
+    /**
+     * @dev See {IERC4626-maxWithdraw}.
+     * Like {balanceOf}, only returns the limit to callers authorized to view the balance of `owner`, and returns 0 or
+     * reverts otherwise, as decided by {_authorizeBalance}. Override {_maxWithdraw} to change the limit itself.
+     */
     function maxWithdraw(address owner) public view virtual returns (uint256) {
-        return _convertToAssets(balanceOf(owner), Math.Rounding.Floor);
+        return _authorizeBalance(owner) ? _maxWithdraw(owner) : 0;
     }
 
-    /** @dev See {IERC4626-maxRedeem}. */
+    /**
+     * @dev See {IERC4626-maxRedeem}.
+     * Like {balanceOf}, only returns the limit to callers authorized to view the balance of `owner`, and returns 0 or
+     * reverts otherwise, as decided by {_authorizeBalance}. Override {_maxRedeem} to change the limit itself.
+     */
     function maxRedeem(address owner) public view virtual returns (uint256) {
-        return balanceOf(owner);
+        return _authorizeBalance(owner) ? _maxRedeem(owner) : 0;
     }
 
     /** @dev See {IERC4626-previewDeposit}. */
@@ -219,30 +231,67 @@ abstract contract ERC4626 is UCEF, IERC4626 {
         return assets;
     }
 
-    /** @dev See {IERC4626-withdraw}. */
+    /**
+     * @dev See {IERC4626-withdraw}.
+     * The limit is checked against the actual balance of `owner`, so an approved spender can withdraw on behalf of
+     * `owner` without being authorized to view that balance. The allowance of a caller other than `owner` is checked
+     * first, so that a caller without sufficient allowance gets the same revert whatever the balance of `owner` is.
+     */
     function withdraw(uint256 assets, address receiver, address owner) public virtual returns (uint256) {
-        uint256 maxAssets = maxWithdraw(owner);
-        if (assets > maxAssets) {
-            revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
+        uint256 shares = previewWithdraw(assets);
+        _requireWithdrawAllowance(owner, shares);
+        if (assets > _maxWithdraw(owner)) {
+            revert UCEFExceededMaxWithdraw(owner, assets);
         }
 
-        uint256 shares = previewWithdraw(assets);
         _withdraw(_msgSender(), receiver, owner, assets, shares);
 
         return shares;
     }
 
-    /** @dev See {IERC4626-redeem}. */
+    /**
+     * @dev See {IERC4626-redeem}.
+     * The limit is checked against the actual balance of `owner`, so an approved spender can redeem on behalf of
+     * `owner` without being authorized to view that balance. The allowance of a caller other than `owner` is checked
+     * first, so that a caller without sufficient allowance gets the same revert whatever the balance of `owner` is.
+     */
     function redeem(uint256 shares, address receiver, address owner) public virtual returns (uint256) {
-        uint256 maxShares = maxRedeem(owner);
-        if (shares > maxShares) {
-            revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
+        _requireWithdrawAllowance(owner, shares);
+        if (shares > _maxRedeem(owner)) {
+            revert UCEFExceededMaxRedeem(owner, shares);
         }
 
         uint256 assets = previewRedeem(shares);
         _withdraw(_msgSender(), receiver, owner, assets, shares);
 
         return assets;
+    }
+
+    /**
+     * @dev Maximum amount of assets that can be withdrawn from `owner`, without access control.
+     * Enforced by {withdraw} and returned by {maxWithdraw} to authorized callers.
+     */
+    function _maxWithdraw(address owner) internal view virtual returns (uint256) {
+        return _convertToAssets(_balanceOf(owner), Math.Rounding.Floor);
+    }
+
+    /**
+     * @dev Maximum amount of shares that can be redeemed from `owner`, without access control.
+     * Enforced by {redeem} and returned by {maxRedeem} to authorized callers.
+     */
+    function _maxRedeem(address owner) internal view virtual returns (uint256) {
+        return _balanceOf(owner);
+    }
+
+    /**
+     * @dev Reverts if the caller is not `owner` and its allowance from `owner` is below `shares`.
+     * Only checks the allowance; it is spent in {_withdraw}.
+     */
+    function _requireWithdrawAllowance(address owner, uint256 shares) private view {
+        address caller = _msgSender();
+        if (caller != owner && _allowance(owner, caller) < shares) {
+            revert ERC20InsufficientAllowance(address(0), 0, 0);
+        }
     }
 
     /**
