@@ -63,21 +63,36 @@ Contracts that emit their own private events should call `_emitPrivateEvent` rat
 
 ### Salted payloads
 
-A block's receipts are committed in its public `receiptsRoot` and block hash. Without randomness, anyone who guesses a payload (a token, sender, receiver and amount) can rebuild the receipt and confirm the guess against the block hash. So every payload ends with a 32-byte salt, derived from a secret seed of the account that triggered the event:
+A block's receipts are committed in its public `receiptsRoot` and block hash. Without randomness, anyone who guesses a payload (a token, sender, receiver and amount) can rebuild the receipt and confirm the guess against the block hash. So every payload ends with a 32-byte salt mixed from three secret seeds. Only one of them has to stay secret for the salts to be unpredictable:
 
-- Each account calls `setPrivateEventSeed(bytes32 seed)` once per token, with 32 random bytes, before its first private event. The call's input is only visible to the sender on Silent Data, and no getter or event exposes the seed. `hasPrivateEventSeed()` tells the caller whether it has set one. The SDK's `ensurePrivateEventSeed` helper generates and sets a random seed if the caller has none.
-- The token does not store the seed as given but a state, `keccak256(abi.encode(token, account, previousState, seed))`. Setting the same value again, or on another token, never restarts a salt sequence that was already used.
-- The state ratchets on every event: the event gets `keccak256(state, "salt")` and the state becomes `keccak256(state, "next")`. Seeing a salt reveals nothing about the state, and a leaked state only exposes later events, not earlier ones. Calling `setPrivateEventSeed` again mixes in a new seed and stops a known leak.
-- The state of `msg.sender` is used, or that of `tx.origin` if `msg.sender` has none. If neither account has one, the call reverts with `PrivateEventSeedNotSet`. Receiving tokens does not need a seed. Smart accounts should set their own seed.
-- Contracts that move tokens for other accounts should set their own seed on those tokens. Otherwise the salts come from whoever sent the transaction, such as a relayer or an ERC-4337 bundler, who can then confirm guesses of those events, and the call reverts when that sender has no seed either:
-  - `ERC4626` vaults and `UCEFWrapper` wrappers take an optional seed for the underlying token in their constructor (`bytes32(0)` sets none).
-  - `XUCEF` owners register the seed of a bridge, or of the lockbox, with `setBridgePrivateEventSeed`. The owner then knows that bridge's salts.
-  - Other contracts can call `setPrivateEventSeed` on the token themselves.
+| Seed | Set by | When | Purpose |
+| --- | --- | --- | --- |
+| Contract seed | The deployer, as the `contractSeed` constructor argument (UCEF3643: the owner, with `setPrivateEventContractSeed`) | Once, at deployment | Starts the token's shared state, so every event is salted from the first one, including events emitted by the constructor |
+| Oracle seed | The `privateEventOracle`, a TEE job, with `updatePrivateEventOracleSeed` | Periodically | Removes the deployer's knowledge of the shared state, and keeps refreshing it |
+| User seed | Each account, with `setPrivateEventSeed` | Optional, once per token | Lets an account protect its own events without trusting the deployer or the oracle |
 
-  Any such seed must be random and only known to whoever sets it. A seed derived from on-chain data makes the salts predictable.
-- Events emitted while a token is being constructed carry a zero salt, since no account can have a seed yet. Do not emit private events from constructors or initializers (an initial-supply mint, or a UCEF3643 `init`, which runs in the proxy constructor): mint after deployment instead.
+How they combine:
 
-The seeds are stored in the token like balances, and like balances they are only as private as the token's code: whoever can upgrade a token can deploy code that reads them, and would then be able to confirm every later event of every account. Issuers of upgradeable tokens are trusted with this.
+- The contract and oracle seeds are mixed into one shared state per token: `state = keccak256(abi.encode(token, state, seed))`. An oracle update never replaces the state, so a bad or leaked oracle seed cannot undo the contract seed.
+- A user seed is mixed into a state for that account: `userState = keccak256(abi.encode(token, account, userState, seed))`. Setting the same value again, or on another token, never restarts a salt sequence that was already used. Accounts without a seed have a zero user state.
+- Each event gets `salt = keccak256(userState, sharedState, "salt")`, using the user state of `msg.sender`. Then both states ratchet: `state = keccak256(state, "next")`. Every event gets a different salt, even for accounts without a seed. Seeing a salt reveals nothing about the states, and a leaked state only exposes later events, not earlier ones.
+
+What each party can do:
+
+- An account without a seed relies on the contract and oracle seeds. Whoever knows both can confirm guesses of its events. Until the first oracle update, that is the deployer alone.
+- An account with a seed can only have its events confirmed by someone who knows its seed and both other seeds.
+- Contracts that move tokens for other accounts (vaults, wrappers, bridges, routers) need no setup: their events are salted from their own user state, which is zero unless they set a seed.
+- Receiving tokens never needs a seed.
+
+Tokens:
+
+- Every UCEF constructor takes `contractSeed` (non-zero) and `oracle` (zero for none) as its last two arguments. Generate the contract seed off-chain for each deployment, never derive it from on-chain data, and keep it out of version control: the Ignition modules read it from the gitignored `ignition/parameters/<module>.json`.
+- `_setPrivateEventOracle` changes the oracle. Tokens decide who may call it: the examples let their admin call `setPrivateEventOracle`, and `XUCEF` its owner.
+- `hasPrivateEventSeed()` tells the caller whether it has set a user seed. It only answers for `msg.sender`. The SDK's `ensurePrivateEventSeed` helper generates and sets a random seed if the caller has none, and `generateSeed()` generates contract and oracle seeds too.
+
+**Precondition: Silent Data.** The seeds are only secret because Silent Data shows a transaction's input only to its sender, exposes no contract storage, and the token has no getter or event for them. On a chain where calldata or storage is public, the salts are not secret.
+
+The states are stored in the token like balances, and like balances they are only as private as the token's code: whoever can upgrade a token can deploy code that reads them, and would then be able to confirm every later event of every account. Issuers of upgradeable tokens are trusted with this.
 
 Decoders that ignore trailing data still decode the payload with the original event signature; the salt is always the last 32 bytes.
 

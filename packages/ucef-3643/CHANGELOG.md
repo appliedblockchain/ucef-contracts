@@ -9,16 +9,20 @@ While the version is below 1.0.0, a minor version bump can contain breaking chan
 
 ### Added
 
-- `setPrivateEventSeed(bytes32)` and `hasPrivateEventSeed()`.
-  Each account, including contract agents, sets a secret seed once; the token derives the salt of each of the account's private events from it.
-  The seeds are stored at a fixed ERC-7201 slot, so they survive implementation upgrades.
+- Salted private event payloads (see "Salted payloads" in the ucef-contracts README), with these functions:
+  - `setPrivateEventContractSeed(bytes32)` and `setPrivateEventOracle(address)`, for the owner;
+  - `updatePrivateEventOracleSeed(bytes32)`, for the oracle;
+  - `setPrivateEventSeed(bytes32)` and `hasPrivateEventSeed()`, for an account's optional seed;
+  - `privateEventOracle()` and the `PrivateEventOracleUpdated` event.
+
+  The states are stored at a fixed ERC-7201 slot, so they survive implementation upgrades.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 
 ### Changed
 
 - **Breaking:** every `PrivateEvent` payload ends with a 32-byte salt, so a guessed payload cannot be confirmed against the public block hash.
-  The salt comes from the seed of `msg.sender`, or of `tx.origin` if `msg.sender` has none, and emitting a private event reverts with `PrivateEventSeedNotSet(address sender)` if neither has one.
-  Agents and holders must set a seed before minting, transferring or approving.
+  The salt mixes the contract seed, the oracle seed and the optional seed of `msg.sender`.
+  Private events revert with `PrivateEventContractSeedNotSet()` until the owner sets the contract seed, so set it after deployment, before the first mint.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 
 ## 0.1.0 - 2026-11-24

@@ -9,20 +9,21 @@ While the version is below 1.0.0, a minor version bump can contain breaking chan
 
 ### Added
 
-- `setPrivateEventSeed(bytes32)` and `hasPrivateEventSeed()` on every UCEF token, declared on `IUCEF`.
-  Each account sets a secret seed once per token; the token derives the salt of each of the account's private events from it.
+- Salted private event payloads (see "Salted payloads" in the README), with these functions on every UCEF token, declared on `IUCEF`:
+  - `setPrivateEventSeed(bytes32)` and `hasPrivateEventSeed()`, for an account's optional seed;
+  - `updatePrivateEventOracleSeed(bytes32)`, for the oracle to mix a new oracle seed into the token's shared state;
+  - `privateEventOracle()`, the `PrivateEventOracleUpdated` event, and the internal `_setPrivateEventOracle` for tokens to expose with their own access control.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
-- `XUCEF.setBridgePrivateEventSeed(address bridge, bytes32 seed)`, for the owner to register the seed of a bridge or the lockbox that cannot set one itself.
+- `XUCEF.setPrivateEventOracle(address)`, for the owner to change the oracle.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 
 ### Changed
 
 - **Breaking:** every `PrivateEvent` payload ends with a 32-byte salt, so a guessed payload cannot be confirmed against the public block hash.
-  The salt comes from the seed of `msg.sender`, or of `tx.origin` if `msg.sender` has none, and emitting a private event reverts with `PrivateEventSeedNotSet(address sender)` if neither has one.
+  The salt mixes the token's contract seed, its oracle seed and the optional seed of `msg.sender`, so only one of them has to stay secret.
   Decoders that ignore trailing data still decode payloads with the original event signature.
-  Events emitted during construction carry a zero salt.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
-- **Breaking:** the `ERC4626` and `UCEFWrapper` constructors take a second argument, the seed of the vault or wrapper on the underlying token, or `bytes32(0)` for none.
+- **Breaking:** the `UCEF`, `UCEFOwned`, `UCEFRegulated`, `UCEFSharable` and `XUCEF` constructors take two more arguments, last: `contractSeed`, a secret random value that must not be zero, and `oracle`, the address allowed to update the oracle seed, or zero for none.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 - **Breaking:** derived contracts emit private events through `_emitPrivateEvent`, which is not `virtual`, instead of emitting `PrivateEvent` directly.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))

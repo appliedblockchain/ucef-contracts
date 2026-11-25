@@ -38,7 +38,11 @@ SILENTDATA_CHAIN_ID=<silent_data_chain_id>
 pnpm compile:all
 ```
 
-### 3. Deploy to Silent Data
+### 3. Set the private event contract seed
+
+Every UCEF token takes a secret random contract seed (see [Salted payloads](README.md#salted-payloads)). Copy `ignition/parameters/<module_name>.json.example` to `ignition/parameters/<module_name>.json` and set `contractSeed` to 32 random bytes, and `oracle` to the address of the oracle that rotates the oracle seed. `pnpm deploy:module` reads this file. It is gitignored: never commit it, and keep the local Ignition deployment journal, which records it, private.
+
+### 4. Deploy to Silent Data
 
 ```bash
 pnpm deploy:module <module_name> silentdata
@@ -80,7 +84,11 @@ Create a `.env` file in the root directory with deployer private key:
 PRIVATE_KEY=<deployer_private_key>
 ```
 
-### 5. Deploy to Local Network
+### 5. Set the private event contract seed
+
+As for Silent Data, create `ignition/parameters/<module_name>.json` from its `.example` with a random `contractSeed`.
+
+### 6. Deploy to Local Network
 
 ```bash
 pnpm deploy:module <module_name>
