@@ -179,6 +179,10 @@ export async function deployBasicSuite(signers: Signers) {
 
   await waitTx(await token.connect(deployer).addAgent(await tokenAgent.getAddress()))
 
+  // Private events revert until the owner sets the contract seed. It is random and never stored.
+  const ucefToken = await ethers.getContractAt(UCEF3643Contracts.UCEF3643.abi, await token.getAddress(), deployer)
+  await waitTx(await ucefToken.setPrivateEventContractSeed(ethers.hexlify(ethers.randomBytes(32))))
+
   console.log(pc.green('Basic suite fixture deployed successfully!'))
 
   return {

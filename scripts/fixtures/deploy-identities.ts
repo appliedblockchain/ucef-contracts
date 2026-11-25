@@ -1,6 +1,5 @@
 import { ethers } from 'hardhat'
 import pc from 'picocolors'
-import { UCEF3643Contracts } from '@appliedblockchain/ucef-3643'
 import { ImportedSuite, deployIdentityProxy, waitTx, ExtendedAccounts } from '../utils'
 
 export async function deployIdentities(data: ImportedSuite) {
@@ -117,9 +116,6 @@ export async function deployIdentities(data: ImportedSuite) {
   )
 
   console.log(pc.yellow('14/15 Minting tokens...'))
-  // The agent's mints emit private events, which are salted from the agent's seed
-  const ucefToken = await ethers.getContractAt(UCEF3643Contracts.UCEF3643.abi, await token.getAddress(), tokenAgent)
-  await waitTx(await ucefToken.setPrivateEventSeed(ethers.hexlify(ethers.randomBytes(32))))
   await waitTx(await token.connect(tokenAgent).mint(await aliceWallet.getAddress(), 1000))
   await waitTx(await token.connect(tokenAgent).mint(await bobWallet.getAddress(), 500))
 

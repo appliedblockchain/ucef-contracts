@@ -15,7 +15,7 @@
     "coverage": "npx hardhat coverage",
     "script": "script() { npx hardhat --network ${2:-localhost} run scripts/${1}.ts; }; script",
     "clean:ignition": "rm -rf .ignition && rm -rf ./ignition/deployments",
-    "deploy:module": "deploy() { npx hardhat ignition deploy ignition/modules/$1.ts --network ${2:-localhost} --deployment-id ${2:-localhost} --reset; }; deploy $@",
+    "deploy:module": "deploy() { params=ignition/parameters/$1.json; npx hardhat ignition deploy ignition/modules/$1.ts --network ${2:-localhost} --deployment-id ${2:-localhost} $([ -f $params ] && echo --parameters $params) --reset; }; deploy $@",
     "clean": "npx hardhat clean",
     "clean:all": "pnpm clean && pnpm -r --if-present clean",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx}\" --ignore-path .prettierignore",
