@@ -21,7 +21,12 @@ interface IUCEF is IERC20 {
     );
 
     /**
-     * @dev Sets the caller's secret seed, from which the salts of its private events are derived.
+     * @dev Emitted when the address allowed to update the oracle seed changes
+     */
+    event PrivateEventOracleUpdated(address indexed previousOracle, address indexed newOracle);
+
+    /**
+     * @dev Sets the caller's optional secret seed, mixed into the salts of the private events it triggers.
      */
     function setPrivateEventSeed(bytes32 seed) external;
 
@@ -29,6 +34,16 @@ interface IUCEF is IERC20 {
      * @dev Returns whether the caller has set a seed.
      */
     function hasPrivateEventSeed() external view returns (bool);
+
+    /**
+     * @dev Mixes a new oracle seed into the token's shared salt state. Only callable by the oracle.
+     */
+    function updatePrivateEventOracleSeed(bytes32 seed) external;
+
+    /**
+     * @dev Returns the address allowed to update the oracle seed.
+     */
+    function privateEventOracle() external view returns (address);
 
     /**
      * @dev Returns the amount of tokens owned by `account`.
@@ -72,4 +87,14 @@ interface IUCEF is IERC20 {
      * Does not include the balance itself.
      */
     error UCEFInsufficientBalance(address sender, uint256 needed);
+
+    /**
+     * @dev Thrown when a private event seed is set to zero
+     */
+    error PrivateEventZeroSeed();
+
+    /**
+     * @dev Thrown when an address other than the oracle updates the oracle seed
+     */
+    error PrivateEventUnauthorizedOracle(address sender);
 } 

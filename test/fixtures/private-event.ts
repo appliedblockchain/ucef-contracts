@@ -42,20 +42,36 @@ export function salted(payload: BytesLike) {
 }
 
 /**
- * Salt state a token stores for `account` when it sets `seed`, on top of its `previous` state:
+ * Random 32-byte seed, as the SDK generates for users, contract seeds and oracle seeds
+ */
+export function randomSeed() {
+  return hexlify(randomBytes(SALT_LENGTH))
+}
+
+/**
+ * User state a token stores for `account` when it sets `seed`, on top of its `previous` state:
  * keccak256(abi.encode(token, account, previous, seed))
  */
-export function privateEventSeedState(token: string, account: string, seed: BytesLike, previous: BytesLike = ZeroHash) {
+export function userStateAfterSeed(token: string, account: string, seed: BytesLike, previous: BytesLike = ZeroHash) {
   return keccak256(
     AbiCoder.defaultAbiCoder().encode(['address', 'address', 'bytes32', 'bytes32'], [token, account, previous, seed]),
   )
 }
 
 /**
- * Salt of the next private event salted from `state`: keccak256(state, "salt")
+ * Shared state a token stores when a contract or oracle seed is mixed into its `previous` state:
+ * keccak256(abi.encode(token, previous, seed))
  */
-export function saltOf(state: BytesLike) {
-  return keccak256(concat([state, toUtf8Bytes('salt')]))
+export function sharedStateAfterSeed(token: string, seed: BytesLike, previous: BytesLike = ZeroHash) {
+  return keccak256(AbiCoder.defaultAbiCoder().encode(['address', 'bytes32', 'bytes32'], [token, previous, seed]))
+}
+
+/**
+ * Salt of the next private event: keccak256(userState, sharedState, "salt").
+ * `userState` is zero for a sender without a seed.
+ */
+export function saltOf(userState: BytesLike, sharedState: BytesLike) {
+  return keccak256(concat([userState, sharedState, toUtf8Bytes('salt')]))
 }
 
 /**
@@ -63,6 +79,17 @@ export function saltOf(state: BytesLike) {
  */
 export function nextState(state: BytesLike) {
   return keccak256(concat([state, toUtf8Bytes('next')]))
+}
+
+/**
+ * Applies `nextState` `count` times
+ */
+export function ratchet(state: BytesLike, count: number) {
+  let result = hexlify(state)
+  for (let i = 0; i < count; i++) {
+    result = nextState(result)
+  }
+  return result
 }
 
 /**
@@ -93,14 +120,13 @@ export function encodePayload(types: string[], values: unknown[]) {
 }
 
 /**
- * Sets a random private event seed for each signer, so they can emit private events.
- * Defaults to every Hardhat signer.
+ * Sets a random private event seed for each signer. Defaults to every Hardhat signer.
  */
 export async function setPrivateEventSeeds(token: BaseContract, signers?: Signer[]) {
   const contract = token as BaseContract & {
     connect: (signer: Signer) => { setPrivateEventSeed: (seed: BytesLike) => Promise<{ wait: () => Promise<unknown> }> }
   }
   for (const signer of signers ?? (await ethers.getSigners())) {
-    await (await contract.connect(signer).setPrivateEventSeed(randomBytes(SALT_LENGTH))).wait()
+    await (await contract.connect(signer).setPrivateEventSeed(randomSeed())).wait()
   }
 }

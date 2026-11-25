@@ -96,7 +96,13 @@ abstract contract UCEFSharable is UCEF {
      * @dev Constructor that sets the initial supervisor address
      * @param initialSupervisor The address to be set as the first supervisor (can be zero address to start unregulated)
      */
-    constructor(address initialSupervisor, string memory name, string memory symbol) UCEF(name, symbol) {
+    constructor(
+        address initialSupervisor,
+        string memory name,
+        string memory symbol,
+        bytes32 contractSeed,
+        address oracle
+    ) UCEF(name, symbol, contractSeed, oracle) {
         _updateSupervisor(initialSupervisor);
     }
 

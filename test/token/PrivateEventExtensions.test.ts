@@ -1,11 +1,10 @@
 import { expect } from 'chai'
 import { ethers } from 'hardhat'
-import { BaseContract, Signer, TransactionReceipt, ZeroHash } from 'ethers'
+import { BaseContract, ContractTransactionResponse, Signer, TransactionReceipt, ZeroAddress, ZeroHash } from 'ethers'
 import {
   MockERC1363,
   MockERC1363Receiver,
   MockFlashBorrower,
-  MockSmartAccount,
   MockUCEFFlashMint,
   MockUCEFVault,
   MockUCEFVotes,
@@ -17,356 +16,285 @@ import {
   EVENT_TYPE_TRANSFER,
   nextState,
   privateEventPayloads,
-  privateEventSeedState,
+  randomSeed,
+  ratchet,
   saltOf,
   saltOfPayload,
+  sharedStateAfterSeed,
+  userStateAfterSeed,
 } from '../fixtures/private-event'
 
 /**
- * Checks that every private event the extensions emit is salted, including events emitted by contracts
- * that move tokens for other accounts (vaults, wrappers, bridges, flash borrowers)
+ * Checks that every private event the extensions emit is salted from the shared state of the token and
+ * the user state of the event's msg.sender, including events triggered by contracts that move tokens for
+ * other accounts (vaults, wrappers, bridges, flash borrowers)
  */
 describe('Private event salts in extensions', function () {
   const AMOUNT = 100n
 
   let owner: Signer
   let user: Signer
-  let bundler: Signer
+  let other: Signer
   let ownerAddress: string
   let userAddress: string
 
-  async function deploy<T>(name: string, args: unknown[] = []) {
+  /**
+   * Shared state of a token, advanced past the private events of every receipt it is shown
+   */
+  type Tracked = { token: BaseContract; address: string; state: string }
+
+  // Deploys a UCEF token with a random contract seed and no oracle, and tracks its shared state
+  async function deploy<T extends BaseContract>(name: string, args: unknown[] = []) {
+    const contractSeed = randomSeed()
+    const token = await deployContract<T>(name, [...args, contractSeed, ZeroAddress])
+    const address = await token.getAddress()
+    const tracked: Tracked = { token, address, state: sharedStateAfterSeed(address, contractSeed) }
+    advance(tracked, await token.deploymentTransaction()!.wait())
+    return { token, tracked }
+  }
+
+  async function deployContract<T extends BaseContract>(name: string, args: unknown[] = []) {
     const factory = await ethers.getContractFactory(name)
     const contract = await factory.deploy(...args)
     await contract.waitForDeployment()
     return contract as unknown as T
   }
 
-  async function addressOf(contract: BaseContract) {
-    return contract.getAddress()
+  function advance(tracked: Tracked, receipt: TransactionReceipt | null) {
+    tracked.state = ratchet(tracked.state, privateEventPayloads(tracked.token, receipt).length)
   }
 
-  // Salts of the private events of `token` in a transaction, in the order they were emitted
-  function saltsOf(token: BaseContract, receipt: TransactionReceipt | null, eventType?: string) {
-    return privateEventPayloads(token, receipt, eventType).map(saltOfPayload)
+  // Sends `tx` and advances the shared state of every tracked token past its events
+  async function send(tx: Promise<ContractTransactionResponse>, ...tracked: Tracked[]) {
+    const receipt = await (await tx).wait()
+    tracked.forEach((t) => advance(t, receipt))
+    return receipt
   }
 
-  // Salts of the next `count` events salted from `state`
-  function chain(state: string, count: number) {
+  // Salts of the private events of `tracked` in `receipt`, in the order they were emitted
+  function saltsOf(tracked: Tracked, receipt: TransactionReceipt | null, eventType?: string) {
+    return privateEventPayloads(tracked.token, receipt, eventType).map(saltOfPayload)
+  }
+
+  // Salts of `count` consecutive events by one sender with `userState` (zero for none), from `sharedState`
+  function chain(userState: string, sharedState: string, count: number) {
     const salts: string[] = []
     for (let i = 0; i < count; i++) {
-      salts.push(saltOf(state))
-      state = nextState(state)
+      salts.push(saltOf(userState, sharedState))
+      userState = userState === ZeroHash ? ZeroHash : nextState(userState)
+      sharedState = nextState(sharedState)
     }
     return salts
   }
 
-  async function setSeed(token: BaseContract, signer: Signer, seed: string) {
-    const contract = token as unknown as UCEFOnlyOwner
-    await (await contract.connect(signer).setPrivateEventSeed(seed)).wait()
-    return privateEventSeedState(await addressOf(token), await signer.getAddress(), seed)
-  }
-
-  function encode(token: BaseContract, method: string, args: unknown[]) {
-    return token.interface.encodeFunctionData(method, args)
+  async function setSeed(tracked: Tracked, signer: Signer, seed: string) {
+    const token = tracked.token as unknown as UCEFOnlyOwner
+    await send(token.connect(signer).setPrivateEventSeed(seed), tracked)
+    return userStateAfterSeed(tracked.address, await signer.getAddress(), seed)
   }
 
   beforeEach(async function () {
-    // `bundler` never sets a seed: it stands for a relayer or ERC-4337 bundler sending the transaction
-    ;[owner, user, bundler] = await ethers.getSigners()
+    ;[owner, user, other] = await ethers.getSigners()
     ownerAddress = await owner.getAddress()
     userAddress = await user.getAddress()
   })
 
-  describe('ERC4626 vault deposits from a smart account', function () {
-    const ASSET_SEED = ethers.id('vault asset seed')
-
+  describe('ERC4626 vault', function () {
     let asset: UCEFOnlyOwner
-    let account: MockSmartAccount
-    let accountAddress: string
+    let vault: MockUCEFVault
+    let assetTracked: Tracked
+    let vaultTracked: Tracked
 
     beforeEach(async function () {
-      asset = await deploy<UCEFOnlyOwner>('UCEFOnlyOwner')
-      await setSeed(asset, owner, ethers.id('owner seed'))
-      account = await deploy<MockSmartAccount>('MockSmartAccount')
-      accountAddress = await addressOf(account)
-      await asset.mint(accountAddress, 1000n)
-      // The account sets its own seed on the asset through a transaction sent by its owner
-      await account
-        .connect(user)
-        .execute(await addressOf(asset), encode(asset, 'setPrivateEventSeed', [ethers.id('a')]))
+      ;({ token: asset, tracked: assetTracked } = await deploy<UCEFOnlyOwner>('UCEFOnlyOwner'))
+      ;({ token: vault, tracked: vaultTracked } = await deploy<MockUCEFVault>('MockUCEFVault', [assetTracked.address]))
+      await send(asset.mint(userAddress, 1000n), assetTracked)
+      await send(asset.connect(user).approve(vaultTracked.address, AMOUNT), assetTracked)
     })
 
-    async function deployVault(assetSeed: string) {
-      const vault = await deploy<MockUCEFVault>('MockUCEFVault', [await addressOf(asset), assetSeed])
-      await account
-        .connect(user)
-        .execute(await addressOf(vault), encode(vault, 'setPrivateEventSeed', [ethers.id('v')]))
-      await account
-        .connect(user)
-        .execute(await addressOf(asset), encode(asset, 'approve', [await addressOf(vault), AMOUNT]))
-      return vault
-    }
-
-    it('reverts when the vault has no seed on the asset and the bundler has none either', async function () {
-      const vault = await deployVault(ZeroHash)
-
-      await expect(
-        account.connect(bundler).execute(await addressOf(vault), encode(vault, 'deposit', [AMOUNT, accountAddress])),
+    it('salts the asset transfers sent by the vault and the vault events of a user without seeds', async function () {
+      const [assetState, vaultState] = [assetTracked.state, vaultTracked.state]
+      const deposit = await send(vault.connect(user).deposit(AMOUNT, userAddress), assetTracked, vaultTracked)
+      const redeem = await send(
+        vault.connect(user).redeem(AMOUNT, userAddress, userAddress),
+        assetTracked,
+        vaultTracked,
       )
-        .to.be.revertedWithCustomError(asset, 'PrivateEventSeedNotSet')
-        .withArgs(await addressOf(vault))
+
+      // The vault has no seed on the asset: its transfers are salted from the asset's shared state only
+      expect([...saltsOf(assetTracked, deposit), ...saltsOf(assetTracked, redeem)]).to.deep.equal(
+        chain(ZeroHash, assetState, 2),
+      )
+      // Transfer (mint of shares) and Deposit, then Transfer (burn) and Withdraw
+      expect([...saltsOf(vaultTracked, deposit), ...saltsOf(vaultTracked, redeem)]).to.deep.equal(
+        chain(ZeroHash, vaultState, 4),
+      )
     })
 
-    it('salts the asset transfers with the seed set in the vault constructor', async function () {
-      const vault = await deployVault(ASSET_SEED)
-      const vaultAddress = await addressOf(vault)
-      const state = privateEventSeedState(await addressOf(asset), vaultAddress, ASSET_SEED)
+    it("mixes the user's seed on the vault into the vault events", async function () {
+      const userState = await setSeed(vaultTracked, user, ethers.id('user seed'))
+      const vaultState = vaultTracked.state
 
-      const deposit = await (
-        await account.connect(bundler).execute(vaultAddress, encode(vault, 'deposit', [AMOUNT, accountAddress]))
-      ).wait()
-      const redeem = await (
-        await account
-          .connect(bundler)
-          .execute(vaultAddress, encode(vault, 'redeem', [AMOUNT, accountAddress, accountAddress]))
-      ).wait()
+      const deposit = await send(vault.connect(user).deposit(AMOUNT, userAddress), assetTracked, vaultTracked)
 
-      const [first, second] = chain(state, 2)
-      expect(saltsOf(asset, deposit, EVENT_TYPE_TRANSFER)).to.deep.equal([first])
-      expect(saltsOf(asset, redeem, EVENT_TYPE_TRANSFER)).to.deep.equal([second])
-    })
-
-    it("salts the vault's own events with the account's seed on the vault", async function () {
-      const vault = await deployVault(ASSET_SEED)
-      const vaultAddress = await addressOf(vault)
-      // setPrivateEventSeed(id('v')) was the account's first seed on the vault
-      const state = privateEventSeedState(vaultAddress, accountAddress, ethers.id('v'))
-
-      const receipt = await (
-        await account.connect(bundler).execute(vaultAddress, encode(vault, 'deposit', [AMOUNT, accountAddress]))
-      ).wait()
-
-      // Transfer (mint of shares) and Deposit
-      expect(saltsOf(vault, receipt)).to.deep.equal(chain(state, 2))
+      expect(saltsOf(vaultTracked, deposit)).to.deep.equal(chain(userState, vaultState, 2))
     })
   })
 
   describe('UCEFWrapper', function () {
-    const UNDERLYING_SEED = ethers.id('wrapper underlying seed')
+    it('salts the underlying transfers sent by the wrapper and the wrapped mints and burns', async function () {
+      const { token: underlying, tracked: underlyingTracked } = await deploy<UCEFOnlyOwner>('UCEFOnlyOwner')
+      const { token: wrapper, tracked: wrapperTracked } = await deploy<MockUCEFWrapper>('MockUCEFWrapper', [
+        underlyingTracked.address,
+      ])
+      await send(underlying.mint(userAddress, 1000n), underlyingTracked)
+      await send(underlying.connect(user).approve(wrapperTracked.address, AMOUNT), underlyingTracked)
+      const userState = await setSeed(wrapperTracked, user, ethers.id('user seed'))
+      const [underlyingState, wrapperState] = [underlyingTracked.state, wrapperTracked.state]
 
-    let underlying: UCEFOnlyOwner
-    let account: MockSmartAccount
-    let accountAddress: string
-
-    beforeEach(async function () {
-      underlying = await deploy<UCEFOnlyOwner>('UCEFOnlyOwner')
-      await setSeed(underlying, owner, ethers.id('owner seed'))
-      account = await deploy<MockSmartAccount>('MockSmartAccount')
-      accountAddress = await addressOf(account)
-      await underlying.mint(accountAddress, 1000n)
-      await account
-        .connect(user)
-        .execute(await addressOf(underlying), encode(underlying, 'setPrivateEventSeed', [ethers.id('a')]))
-    })
-
-    async function deployWrapper(underlyingSeed: string) {
-      const wrapper = await deploy<MockUCEFWrapper>('MockUCEFWrapper', [await addressOf(underlying), underlyingSeed])
-      await account
-        .connect(user)
-        .execute(await addressOf(wrapper), encode(wrapper, 'setPrivateEventSeed', [ethers.id('w')]))
-      await account
-        .connect(user)
-        .execute(await addressOf(underlying), encode(underlying, 'approve', [await addressOf(wrapper), AMOUNT]))
-      return wrapper
-    }
-
-    it('reverts when the wrapper has no seed on the underlying token and the bundler has none either', async function () {
-      const wrapper = await deployWrapper(ZeroHash)
-
-      await expect(
-        account
-          .connect(bundler)
-          .execute(await addressOf(wrapper), encode(wrapper, 'depositFor', [accountAddress, AMOUNT])),
+      const deposit = await send(
+        wrapper.connect(user).depositFor(userAddress, AMOUNT),
+        underlyingTracked,
+        wrapperTracked,
       )
-        .to.be.revertedWithCustomError(underlying, 'PrivateEventSeedNotSet')
-        .withArgs(await addressOf(wrapper))
-    })
+      const withdraw = await send(
+        wrapper.connect(user).withdrawTo(userAddress, AMOUNT),
+        underlyingTracked,
+        wrapperTracked,
+      )
 
-    it('salts the underlying transfers with the seed set in the wrapper constructor', async function () {
-      const wrapper = await deployWrapper(UNDERLYING_SEED)
-      const wrapperAddress = await addressOf(wrapper)
-      const state = privateEventSeedState(await addressOf(underlying), wrapperAddress, UNDERLYING_SEED)
-
-      const deposit = await (
-        await account.connect(bundler).execute(wrapperAddress, encode(wrapper, 'depositFor', [accountAddress, AMOUNT]))
-      ).wait()
-      const withdraw = await (
-        await account.connect(bundler).execute(wrapperAddress, encode(wrapper, 'withdrawTo', [accountAddress, AMOUNT]))
-      ).wait()
-
-      const [first, second] = chain(state, 2)
-      expect(saltsOf(underlying, deposit, EVENT_TYPE_TRANSFER)).to.deep.equal([first])
-      expect(saltsOf(underlying, withdraw, EVENT_TYPE_TRANSFER)).to.deep.equal([second])
-      // Mint and burn of wrapped tokens, salted from the account's seed on the wrapper
-      const wrapperState = privateEventSeedState(wrapperAddress, accountAddress, ethers.id('w'))
-      expect([...saltsOf(wrapper, deposit), ...saltsOf(wrapper, withdraw)]).to.deep.equal(chain(wrapperState, 2))
+      // The underlying transferFrom is sent by the wrapper, which has no seed; the withdrawal transfer too
+      expect([
+        ...saltsOf(underlyingTracked, deposit, EVENT_TYPE_TRANSFER),
+        ...saltsOf(underlyingTracked, withdraw, EVENT_TYPE_TRANSFER),
+      ]).to.deep.equal(chain(ZeroHash, underlyingState, 2))
+      expect([...saltsOf(wrapperTracked, deposit), ...saltsOf(wrapperTracked, withdraw)]).to.deep.equal(
+        chain(userState, wrapperState, 2),
+      )
     })
   })
 
   describe('UCEFVotes', function () {
     it('salts the Transfer and both DelegateVotesChanged events of a delegated transfer with distinct salts', async function () {
-      const token = await deploy<MockUCEFVotes>('MockUCEFVotes')
-      const [, , , recipient] = await ethers.getSigners()
-      await setSeed(token, recipient, ethers.id('recipient seed'))
-      await setSeed(token, owner, ethers.id('owner seed'))
-      await token.mint(userAddress, 1000n)
-      await token.connect(recipient).delegate(await recipient.getAddress())
-      const state = await setSeed(token, user, ethers.id('user seed'))
-      await token.connect(user).delegate(userAddress)
+      const { token, tracked } = await deploy<MockUCEFVotes>('MockUCEFVotes')
+      await send(token.mint(userAddress, 1000n), tracked)
+      await send(token.connect(other).delegate(await other.getAddress()), tracked)
+      let userState = await setSeed(tracked, user, ethers.id('user seed'))
+      const delegation = await send(token.connect(user).delegate(userAddress), tracked)
+      userState = ratchet(userState, privateEventPayloads(token, delegation).length)
+      const sharedState = tracked.state
 
-      const receipt = await (await token.connect(user).transfer(await recipient.getAddress(), AMOUNT)).wait()
+      const receipt = await send(token.connect(user).transfer(await other.getAddress(), AMOUNT), tracked)
 
-      // delegate() emitted DelegateChanged and DelegateVotesChanged with the first two states;
-      // Transfer and the two DelegateVotesChanged use the next three
-      expect(saltsOf(token, receipt)).to.deep.equal(chain(nextState(nextState(state)), 3))
+      const salts = saltsOf(tracked, receipt)
+      expect(salts).to.have.length(3)
+      expect(salts).to.deep.equal(chain(userState, sharedState, 3))
     })
   })
 
   describe('UCEFFlashMint', function () {
-    it('salts every event of a flash loan, including those the borrower triggers', async function () {
-      const token = await deploy<MockUCEFFlashMint>('MockUCEFFlashMint')
-      const borrower = await deploy<MockFlashBorrower>('MockFlashBorrower', [true])
-      const state = await setSeed(token, user, ethers.id('user seed'))
+    it('salts every event of a flash loan from the sender of each event', async function () {
+      const { token, tracked } = await deploy<MockUCEFFlashMint>('MockUCEFFlashMint')
+      const borrower = await deployContract<MockFlashBorrower>('MockFlashBorrower', [true])
+      const userState = await setSeed(tracked, user, ethers.id('user seed'))
+      const sharedState = tracked.state
 
-      const receipt = await (
-        await token.connect(user).flashLoan(await addressOf(borrower), await addressOf(token), AMOUNT, '0x')
-      ).wait()
+      const receipt = await send(
+        token.connect(user).flashLoan(await borrower.getAddress(), tracked.address, AMOUNT, '0x'),
+        tracked,
+      )
 
-      // The borrower has no seed, so the mint, its approval and the burn use the user's (tx.origin) seed
-      expect(saltsOf(token, receipt)).to.deep.equal(chain(state, 3))
+      // The mint and the burn are sent by the user; the repayment approval by the borrower, which has no seed
+      expect(saltsOf(tracked, receipt)).to.deep.equal([
+        saltOf(userState, sharedState),
+        saltOf(ZeroHash, nextState(sharedState)),
+        saltOf(nextState(userState), nextState(nextState(sharedState))),
+      ])
     })
 
     it('still requires the borrower to approve the repayment', async function () {
-      const token = await deploy<MockUCEFFlashMint>('MockUCEFFlashMint')
-      const borrower = await deploy<MockFlashBorrower>('MockFlashBorrower', [false])
-      await setSeed(token, user, ethers.id('user seed'))
+      const { token, tracked } = await deploy<MockUCEFFlashMint>('MockUCEFFlashMint')
+      const borrower = await deployContract<MockFlashBorrower>('MockFlashBorrower', [false])
 
       await expect(
-        token.connect(user).flashLoan(await addressOf(borrower), await addressOf(token), AMOUNT, '0x'),
+        token.connect(user).flashLoan(await borrower.getAddress(), tracked.address, AMOUNT, '0x'),
       ).to.be.revertedWithCustomError(token, 'ERC20InsufficientAllowance')
     })
   })
 
   describe('ERC1363', function () {
     let token: MockERC1363
-    let receiver: MockERC1363Receiver
+    let tracked: Tracked
     let receiverAddress: string
-    let state: string
 
     beforeEach(async function () {
-      token = await deploy<MockERC1363>('MockERC1363')
-      receiver = await deploy<MockERC1363Receiver>('MockERC1363Receiver')
-      receiverAddress = await addressOf(receiver)
-      await setSeed(token, owner, ethers.id('owner seed'))
-      await token.mint(userAddress, 1000n)
-      state = await setSeed(token, user, ethers.id('user seed'))
+      ;({ token, tracked } = await deploy<MockERC1363>('MockERC1363'))
+      const receiver = await deployContract<MockERC1363Receiver>('MockERC1363Receiver')
+      receiverAddress = await receiver.getAddress()
+      await send(token.mint(userAddress, 1000n), tracked)
     })
 
     it('salts transferAndCall and approveAndCall', async function () {
-      const transfer = await (
-        await token.connect(user)['transferAndCall(address,uint256)'](receiverAddress, AMOUNT)
-      ).wait()
-      const approve = await (
-        await token.connect(user)['approveAndCall(address,uint256)'](receiverAddress, AMOUNT)
-      ).wait()
+      const userState = await setSeed(tracked, user, ethers.id('user seed'))
+      const sharedState = tracked.state
 
-      expect([...saltsOf(token, transfer), ...saltsOf(token, approve)]).to.deep.equal(chain(state, 2))
+      const transfer = await send(
+        token.connect(user)['transferAndCall(address,uint256)'](receiverAddress, AMOUNT),
+        tracked,
+      )
+      const approve = await send(
+        token.connect(user)['approveAndCall(address,uint256)'](receiverAddress, AMOUNT),
+        tracked,
+      )
+
+      expect([...saltsOf(tracked, transfer), ...saltsOf(tracked, approve)]).to.deep.equal(
+        chain(userState, sharedState, 2),
+      )
     })
 
-    it('salts transferFromAndCall with the seed of the spender', async function () {
-      await token.connect(user).approve(ownerAddress, AMOUNT)
-      const ownerState = privateEventSeedState(await addressOf(token), ownerAddress, ethers.id('owner seed'))
+    it('salts transferFromAndCall from the spender', async function () {
+      await send(token.connect(user).approve(ownerAddress, AMOUNT), tracked)
+      const ownerState = await setSeed(tracked, owner, ethers.id('owner seed'))
+      const sharedState = tracked.state
 
-      const receipt = await (
-        await token.connect(owner)['transferFromAndCall(address,address,uint256)'](userAddress, receiverAddress, AMOUNT)
-      ).wait()
+      const receipt = await send(
+        token.connect(owner)['transferFromAndCall(address,address,uint256)'](userAddress, receiverAddress, AMOUNT),
+        tracked,
+      )
 
-      // The owner's mint in beforeEach used its first state. Spending an allowance emits no Approval
-      expect(saltsOf(token, receipt)).to.deep.equal(chain(nextState(ownerState), 1))
+      // Spending an allowance emits no Approval
+      expect(saltsOf(tracked, receipt)).to.deep.equal(chain(ownerState, sharedState, 1))
     })
   })
 
-  describe('XUCEF bridge seeds', function () {
-    const BRIDGE_SEED = ethers.id('bridge seed')
-
+  describe('XUCEF', function () {
     let token: XUCEF
-    let tokenAddress: string
-    let bridge: MockSmartAccount
-    let bridgeAddress: string
+    let tracked: Tracked
 
     beforeEach(async function () {
-      // The owner (factory) is `owner`; `bundler` relays the bridge's mints and has no seed
-      token = await deploy<XUCEF>('XUCEF', ['XUCEF', 'xUCEF', 18, ownerAddress])
-      tokenAddress = await addressOf(token)
-      bridge = await deploy<MockSmartAccount>('MockSmartAccount')
-      bridgeAddress = await addressOf(bridge)
-      await token.setLimits(bridgeAddress, 1000n, 1000n)
+      // The owner (factory) is `owner`; `other` is a bridge without a seed
+      ;({ token, tracked } = await deploy<XUCEF>('XUCEF', ['XUCEF', 'xUCEF', 18, ownerAddress]))
+      await send(token.setLimits(await other.getAddress(), 1000n, 1000n), tracked)
     })
 
-    const mintThroughBridge = () =>
-      bridge.connect(bundler).execute(tokenAddress, encode(token, 'mint', [userAddress, AMOUNT]))
+    it('salts the mints of a bridge without a seed from the shared state', async function () {
+      const sharedState = tracked.state
 
-    it('reverts a relayed mint when the bridge has no seed', async function () {
-      await expect(mintThroughBridge())
-        .to.be.revertedWithCustomError(token, 'PrivateEventSeedNotSet')
-        .withArgs(bridgeAddress)
+      const receipt = await send(token.connect(other).mint(userAddress, AMOUNT), tracked)
+
+      expect(saltsOf(tracked, receipt)).to.deep.equal(chain(ZeroHash, sharedState, 1))
     })
 
-    it('salts relayed mints with the seed the owner registered for the bridge', async function () {
-      await token.setBridgePrivateEventSeed(bridgeAddress, BRIDGE_SEED)
-
-      const receipt = await (await mintThroughBridge()).wait()
-
-      expect(saltsOf(token, receipt)).to.deep.equal([
-        saltOf(privateEventSeedState(tokenAddress, bridgeAddress, BRIDGE_SEED)),
-      ])
-    })
-
-    it('mixes the registered seed into a seed the bridge set itself', async function () {
-      await bridge.execute(tokenAddress, encode(token, 'setPrivateEventSeed', [ethers.id('own seed')]))
-      await token.setBridgePrivateEventSeed(bridgeAddress, BRIDGE_SEED)
-
-      const receipt = await (await mintThroughBridge()).wait()
-
-      const own = privateEventSeedState(tokenAddress, bridgeAddress, ethers.id('own seed'))
-      expect(saltsOf(token, receipt)).to.deep.equal([
-        saltOf(privateEventSeedState(tokenAddress, bridgeAddress, BRIDGE_SEED, own)),
-      ])
-    })
-
-    it('lets the owner register a seed for the lockbox', async function () {
-      await token.setLockbox(bridgeAddress)
-      await token.setLimits(bridgeAddress, 0n, 0n)
-
-      await expect(token.setBridgePrivateEventSeed(bridgeAddress, BRIDGE_SEED)).to.not.be.reverted
-      await expect(mintThroughBridge()).to.not.be.reverted
-    })
-
-    it('only lets the owner register seeds, and only for bridges', async function () {
-      await expect(token.connect(user).setBridgePrivateEventSeed(bridgeAddress, BRIDGE_SEED))
+    it('only lets the owner change the oracle', async function () {
+      expect(await token.privateEventOracle()).to.equal(ZeroAddress)
+      await expect(token.connect(user).setPrivateEventOracle(userAddress))
         .to.be.revertedWithCustomError(token, 'OwnableUnauthorizedAccount')
         .withArgs(userAddress)
-      await expect(token.setBridgePrivateEventSeed(userAddress, BRIDGE_SEED))
-        .to.be.revertedWithCustomError(token, 'XUCEF_NotBridge')
-        .withArgs(userAddress)
-      await expect(token.setBridgePrivateEventSeed(ethers.ZeroAddress, BRIDGE_SEED))
-        .to.be.revertedWithCustomError(token, 'XUCEF_NotBridge')
-        .withArgs(ethers.ZeroAddress)
-      await expect(token.setBridgePrivateEventSeed(bridgeAddress, ZeroHash)).to.be.revertedWithCustomError(
-        token,
-        'PrivateEventZeroSeed',
-      )
+
+      await expect(token.setPrivateEventOracle(userAddress))
+        .to.emit(token, 'PrivateEventOracleUpdated')
+        .withArgs(ZeroAddress, userAddress)
+      await token.connect(user).updatePrivateEventOracleSeed(ethers.id('oracle seed'))
     })
   })
 })

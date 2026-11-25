@@ -10,25 +10,25 @@ pragma solidity ^0.8.24;
  * Receipts are committed in the block's receiptsRoot and hash, which are public. Without
  * randomness, anyone who guesses a payload (e.g. from, to and value of a transfer) can rebuild
  * the receipt and confirm the guess against the block hash. To prevent that, every payload
- * ends with a 32-byte salt derived from a secret seed of the account that triggered it.
+ * ends with a 32-byte salt mixed from three secret seeds, so only one of them has to stay secret:
  *
- * - Each account sets its seed once with `setPrivateEventSeed`. The call's input is only
- *   visible to the sender on Silent Data, and the seed has no getter.
- * - The contract does not store the seed as given but keccak256(token, account, previous
- *   state, seed). Setting the same value again, or on another token, never restarts a salt
- *   sequence that was already used.
- * - The stored state ratchets on every event: the event gets salt = keccak256(state, "salt")
- *   and the state becomes keccak256(state, "next"). Seeing a salt reveals nothing about the
- *   state, and a leaked state (e.g. through a malicious upgrade) only exposes later events,
- *   not earlier ones. Setting a new seed stops a known leak.
- * - The state used is that of `msg.sender` or, for contracts that have none, that of
- *   `tx.origin`. If neither has one, the call reverts. Contracts that move tokens for other
- *   accounts (vaults, wrappers, bridges) should set their own seed: otherwise the salts come
- *   from whoever sent the transaction (a relayer or bundler), who can then confirm guesses of
- *   those events, and the call reverts when that sender has no seed either.
- * - Events emitted while the contract is being constructed carry a zero salt, as no account
- *   can have a seed yet. Do not emit private events from constructors or initializers (e.g.
- *   an initial-supply mint): mint after deployment instead.
+ * - Contract seed: passed to the constructor by the deployer. It starts the token's shared state.
+ * - Oracle seed: set and rotated by the `privateEventOracle` (a TEE job on Silent Data) through
+ *   `updatePrivateEventOracleSeed`. Each update is mixed into the shared state, never replaces it.
+ * - User seed: optional, set by an account with `setPrivateEventSeed`. The token stores
+ *   keccak256(token, account, previous state, seed), so reusing a seed value, here or on another
+ *   token, never restarts a salt sequence that was already used.
+ *
+ * Each event gets salt = keccak256(user state of msg.sender, shared state, "salt"), after which
+ * both states ratchet: state = keccak256(state, "next"). Seeing a salt reveals nothing about the
+ * states, every event gets a different salt even for accounts without a seed, and a leaked state
+ * (e.g. through a malicious upgrade) only exposes later events, not earlier ones.
+ *
+ * Accounts without a seed rely on the contract and oracle seeds: whoever knows both can confirm
+ * guesses of their events. Until the first oracle update that is the deployer alone.
+ *
+ * Precondition: the seeds are only secret on Silent Data, where a transaction's input is only
+ * visible to its sender, contract storage has no public reader and none of the seeds has a getter.
  *
  * Payload layout: `abi.encode(<event arguments>) ++ salt`. Decoders that ignore trailing
  * data keep working; the salt is always the last 32 bytes.
@@ -47,18 +47,25 @@ abstract contract PrivateEventEmitter {
     );
 
     /**
-     * @dev Thrown when a private event is emitted and neither `sender` nor `tx.origin` has set a seed
+     * @dev Emitted when the address allowed to update the oracle seed changes
      */
-    error PrivateEventSeedNotSet(address sender);
+    event PrivateEventOracleUpdated(address indexed previousOracle, address indexed newOracle);
 
     /**
-     * @dev Thrown when `setPrivateEventSeed` is called with a zero seed
+     * @dev Thrown when a seed is set to zero
      */
     error PrivateEventZeroSeed();
 
+    /**
+     * @dev Thrown when an address other than the oracle updates the oracle seed
+     */
+    error PrivateEventUnauthorizedOracle(address sender);
+
     /// @custom:storage-location erc7201:silentdata.storage.PrivateEventEmitter
     struct PrivateEventEmitterStorage {
-        mapping(address account => bytes32) seeds;
+        mapping(address account => bytes32) userStates;
+        bytes32 sharedState;
+        address oracle;
     }
 
     // keccak256(abi.encode(uint256(keccak256("silentdata.storage.PrivateEventEmitter")) - 1)) & ~bytes32(uint256(0xff))
@@ -66,23 +73,56 @@ abstract contract PrivateEventEmitter {
         0xe1d34a53f28a177627856c58ee2db408c61178fd96b695ed8a3a62d835197c00;
 
     /**
-     * @notice Sets the secret seed the salts of the caller's private events are derived from
-     * @dev Can be called again to replace the seed. The seed must be random and kept secret:
-     * whoever knows it can confirm guesses of the caller's later private events.
+     * @param contractSeed Secret random value that starts the shared state, must not be zero.
+     * Generate it off-chain for each deployment and never derive it from on-chain data.
+     * @param oracle Address allowed to update the oracle seed, or zero for none
+     */
+    constructor(bytes32 contractSeed, address oracle) {
+        _mixPrivateEventSharedState(contractSeed);
+        _setPrivateEventOracle(oracle);
+    }
+
+    /**
+     * @notice Sets the caller's secret seed, mixed into the salts of the private events it triggers
+     * @dev Optional: without it the caller's salts come from the contract and oracle seeds only.
+     * Can be called again: the new seed is mixed into the current state. The seed must be random
+     * and kept secret: whoever knows it, and the shared state, can confirm guesses of the caller's
+     * later private events.
      * @param seed Secret random value, must not be zero
      */
     function setPrivateEventSeed(bytes32 seed) external {
-        _setPrivateEventSeed(msg.sender, seed);
+        if (seed == bytes32(0)) {
+            revert PrivateEventZeroSeed();
+        }
+        mapping(address => bytes32) storage userStates = _getPrivateEventEmitterStorage().userStates;
+        userStates[msg.sender] = keccak256(abi.encode(address(this), msg.sender, userStates[msg.sender], seed));
     }
 
     /**
      * @notice Whether the caller has set a seed
-     * @dev Only answers for `msg.sender`, so arbitrary callers cannot query other accounts. A contract
-     * the account calls can still learn it, e.g. by triggering a private event from a contract without
-     * a seed and catching `PrivateEventSeedNotSet`.
+     * @dev Only answers for `msg.sender`, so arbitrary callers cannot query other accounts.
      */
     function hasPrivateEventSeed() external view returns (bool) {
-        return _getPrivateEventEmitterStorage().seeds[msg.sender] != bytes32(0);
+        return _getPrivateEventEmitterStorage().userStates[msg.sender] != bytes32(0);
+    }
+
+    /**
+     * @notice Mixes a new oracle seed into the shared state
+     * @dev Only callable by `privateEventOracle`. Emits no event, as the call itself is private.
+     * @param seed Secret random value, must not be zero
+     */
+    function updatePrivateEventOracleSeed(bytes32 seed) external {
+        if (msg.sender != _getPrivateEventEmitterStorage().oracle) {
+            revert PrivateEventUnauthorizedOracle(msg.sender);
+        }
+        _mixPrivateEventSharedState(seed);
+    }
+
+    /**
+     * @notice The address allowed to update the oracle seed
+     */
+    function privateEventOracle() public view returns (address) {
+        return _getPrivateEventEmitterStorage().oracle;
     }
 
     /**
@@ -97,41 +137,40 @@ abstract contract PrivateEventEmitter {
     }
 
     /**
-     * @dev Mixes `seed` into the salt state of `account`. Binding the token, the account and the
-     * previous state means that reusing a seed value never replays salts.
+     * @dev Changes the address allowed to update the oracle seed. Not exposed by default:
+     * tokens decide who may call it, e.g. their owner or admin.
      */
-    function _setPrivateEventSeed(address account, bytes32 seed) internal {
-        if (seed == bytes32(0)) {
-            revert PrivateEventZeroSeed();
-        }
-        mapping(address => bytes32) storage seeds = _getPrivateEventEmitterStorage().seeds;
-        seeds[account] = keccak256(abi.encode(address(this), account, seeds[account], seed));
+    function _setPrivateEventOracle(address newOracle) internal {
+        PrivateEventEmitterStorage storage $ = _getPrivateEventEmitterStorage();
+        emit PrivateEventOracleUpdated($.oracle, newOracle);
+        $.oracle = newOracle;
     }
 
     /**
-     * @dev Returns the salt for the next private event and ratchets the state it came from
+     * @dev Mixes `seed` into the shared state. Binding the token and the previous state means
+     * that a seed value, here or on another token, never restarts a salt sequence.
+     */
+    function _mixPrivateEventSharedState(bytes32 seed) private {
+        if (seed == bytes32(0)) {
+            revert PrivateEventZeroSeed();
+        }
+        PrivateEventEmitterStorage storage $ = _getPrivateEventEmitterStorage();
+        $.sharedState = keccak256(abi.encode(address(this), $.sharedState, seed));
+    }
+
+    /**
+     * @dev Returns the salt for the next private event and ratchets the states it came from
      */
     function _nextPrivateEventSalt() private returns (bytes32) {
-        // No account can have set a seed while the contract is being constructed
-        if (address(this).code.length == 0) {
-            return bytes32(0);
-        }
+        PrivateEventEmitterStorage storage $ = _getPrivateEventEmitterStorage();
+        bytes32 userState = $.userStates[msg.sender];
+        bytes32 sharedState = $.sharedState;
 
-        mapping(address => bytes32) storage seeds = _getPrivateEventEmitterStorage().seeds;
-        address account = msg.sender;
-        bytes32 seed = seeds[account];
-        if (seed == bytes32(0)) {
-            // tx.origin is only a source of secret randomness here, not authorization
-            // slither-disable-next-line tx-origin
-            account = tx.origin;
-            seed = seeds[account];
-            if (seed == bytes32(0)) {
-                revert PrivateEventSeedNotSet(msg.sender);
-            }
+        $.sharedState = keccak256(abi.encodePacked(sharedState, "next"));
+        if (userState != bytes32(0)) {
+            $.userStates[msg.sender] = keccak256(abi.encodePacked(userState, "next"));
         }
-
-        seeds[account] = keccak256(abi.encodePacked(seed, "next"));
-        return keccak256(abi.encodePacked(seed, "salt"));
+        return keccak256(abi.encodePacked(userState, sharedState, "salt"));
     }
 
     function _getPrivateEventEmitterStorage() private pure returns (PrivateEventEmitterStorage storage $) {

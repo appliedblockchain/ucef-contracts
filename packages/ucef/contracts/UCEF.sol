@@ -92,8 +92,16 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
      * @dev Constructor that sets the name and symbol of the token
      * @param name The name of the token
      * @param symbol The symbol of the token
+     * @param contractSeed Secret random value that starts the private event salt state, must not be zero
+     * (see {PrivateEventEmitter})
+     * @param oracle Address allowed to update the private event oracle seed, or zero for none
      */
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
+    constructor(
+        string memory name,
+        string memory symbol,
+        bytes32 contractSeed,
+        address oracle
+    ) ERC20(name, symbol) PrivateEventEmitter(contractSeed, oracle) {}
 
     /**
      * @dev Internal function to determine if an address is authorized to view a balance

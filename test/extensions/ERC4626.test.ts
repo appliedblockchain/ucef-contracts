@@ -3,7 +3,7 @@ import { ethers } from 'hardhat'
 import { Signer } from 'ethers'
 import { UCEFHiddenBalanceVaultMock, UCEFOnlyOwner, UCEFOwnedVaultMock } from '../../typechain-types'
 import { deployToken } from '../fixtures/deploy-token'
-import { setPrivateEventSeeds } from '../fixtures/private-event'
+import { randomSeed } from '../fixtures/private-event'
 
 type Vault = UCEFOwnedVaultMock | UCEFHiddenBalanceVaultMock
 
@@ -46,9 +46,12 @@ describe('ERC4626', function () {
 
         asset = await deployToken<UCEFOnlyOwner>('UCEFOnlyOwner')
         const VaultFactory = await ethers.getContractFactory(contract)
-        vault = (await VaultFactory.deploy(await asset.getAddress())) as unknown as Vault
+        vault = (await VaultFactory.deploy(
+          await asset.getAddress(),
+          randomSeed(),
+          ethers.ZeroAddress,
+        )) as unknown as Vault
         await vault.waitForDeployment()
-        await setPrivateEventSeeds(vault)
 
         await asset.mint(holderAddress, DEPOSIT)
         await asset.connect(holder).approve(await vault.getAddress(), DEPOSIT)

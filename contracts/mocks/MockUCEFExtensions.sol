@@ -19,7 +19,11 @@ import {IERC1363Spender} from "@openzeppelin/contracts/interfaces/IERC1363Spende
  * @dev Minimal concrete tokens for the UCEF extensions, to test that their private events are salted
  */
 contract MockUCEFVault is UCEFOwned, ERC4626 {
-    constructor(IUCEF asset_, bytes32 assetSeed) UCEFOwned("Vault", "vMCK") ERC4626(asset_, assetSeed) {}
+    constructor(
+        IUCEF asset_,
+        bytes32 contractSeed,
+        address oracle
+    ) UCEFOwned("Vault", "vMCK", contractSeed, oracle) ERC4626(asset_) {}
 
     function decimals() public view override(ERC20, ERC4626) returns (uint8) {
         return ERC4626.decimals();
@@ -33,10 +37,11 @@ contract MockUCEFVault is UCEFOwned, ERC4626 {
 }
 
 contract MockUCEFWrapper is UCEFOwned, UCEFWrapper {
-    constructor(IUCEF underlying_, bytes32 underlyingSeed)
-        UCEFOwned("Wrapper", "wMCK")
-        UCEFWrapper(underlying_, underlyingSeed)
-    {}
+    constructor(
+        IUCEF underlying_,
+        bytes32 contractSeed,
+        address oracle
+    ) UCEFOwned("Wrapper", "wMCK", contractSeed, oracle) UCEFWrapper(underlying_) {}
 
     function decimals() public view override(ERC20, UCEFWrapper) returns (uint8) {
         return UCEFWrapper.decimals();
@@ -50,7 +55,10 @@ contract MockUCEFWrapper is UCEFOwned, UCEFWrapper {
 }
 
 contract MockUCEFVotes is UCEFOwned, UCEFVotes {
-    constructor() UCEFOwned("Votes", "vtMCK") EIP712("Votes", "1") {}
+    constructor(
+        bytes32 contractSeed,
+        address oracle
+    ) UCEFOwned("Votes", "vtMCK", contractSeed, oracle) EIP712("Votes", "1") {}
 
     function mint(address account, uint256 amount) external {
         _mint(account, amount);
@@ -64,7 +72,7 @@ contract MockUCEFVotes is UCEFOwned, UCEFVotes {
 }
 
 contract MockUCEFFlashMint is UCEFOwned, UCEFFlashMint {
-    constructor() UCEFOwned("FlashMint", "fMCK") {}
+    constructor(bytes32 contractSeed, address oracle) UCEFOwned("FlashMint", "fMCK", contractSeed, oracle) {}
 
     function _authorizeMint(address, uint256) internal view override {
         if (!_isFlashLoan()) {
@@ -74,7 +82,7 @@ contract MockUCEFFlashMint is UCEFOwned, UCEFFlashMint {
 }
 
 contract MockERC1363 is UCEFOwned, ERC1363 {
-    constructor() UCEFOwned("ERC1363", "cMCK") {}
+    constructor(bytes32 contractSeed, address oracle) UCEFOwned("ERC1363", "cMCK", contractSeed, oracle) {}
 
     function mint(address account, uint256 amount) external {
         _mint(account, amount);
@@ -108,21 +116,5 @@ contract MockERC1363Receiver is IERC1363Receiver, IERC1363Spender {
 
     function onApprovalReceived(address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC1363Spender.onApprovalReceived.selector;
-    }
-}
-
-/**
- * @dev Stand-in for an ERC-4337 account: anyone can make it call a contract, so the transaction's
- * sender (a bundler, as tx.origin) differs from the account
- */
-contract MockSmartAccount {
-    function execute(address target, bytes calldata data) external returns (bytes memory) {
-        (bool success, bytes memory result) = target.call(data);
-        if (!success) {
-            assembly {
-                revert(add(result, 32), mload(result))
-            }
-        }
-        return result;
     }
 }
