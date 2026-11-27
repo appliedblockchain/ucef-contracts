@@ -13,6 +13,8 @@ pragma solidity ^0.8.24;
  * ends with a 32-byte salt mixed from three secret seeds, so only one of them has to stay secret:
  *
  * - Contract seed: passed to the constructor by the deployer. It starts the token's shared state.
+ *   Tokens can let their owner or admin mix in a new one later with `_mixPrivateEventContractSeed`,
+ *   e.g. after a suspected leak on a token without an oracle.
  * - Oracle seed: set and rotated by the `privateEventOracle` (a TEE job on Silent Data) through
  *   `updatePrivateEventOracleSeed`. Each update is mixed into the shared state, never replaces it.
  * - User seed: optional, set by an account with `setPrivateEventSeed`. The token stores
@@ -144,6 +146,16 @@ abstract contract PrivateEventEmitter {
         PrivateEventEmitterStorage storage $ = _getPrivateEventEmitterStorage();
         emit PrivateEventOracleUpdated($.oracle, newOracle);
         $.oracle = newOracle;
+    }
+
+    /**
+     * @dev Mixes a new contract seed into the shared state. Not exposed by default: tokens decide
+     * who may call it, e.g. their owner or admin. Mixing never weakens the salts, so it can be used
+     * after a suspected leak of the contract seed, notably on a token without an oracle.
+     * @param seed Secret random value generated off-chain, must not be zero
+     */
+    function _mixPrivateEventContractSeed(bytes32 seed) internal {
+        _mixPrivateEventSharedState(seed);
     }
 
     /**

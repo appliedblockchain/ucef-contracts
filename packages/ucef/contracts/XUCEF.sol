@@ -121,6 +121,16 @@ contract XUCEF is UCEFOwned, Ownable, IXERC20, ERC20Permit {
     }
 
     /**
+     * @notice Mixes a new contract seed into the private event shared state
+     * @dev Only callable by the owner. Each call mixes in, never replaces, so it can be used after
+     * a suspected leak of the contract seed.
+     * @param _seed Secret random value generated off-chain, must not be zero
+     */
+    function setPrivateEventContractSeed(bytes32 _seed) external onlyOwner {
+        _mixPrivateEventContractSeed(_seed);
+    }
+
+    /**
      * @notice Returns the max limit of a bridge
      *
      * @param _bridge the bridge we are viewing the limits of

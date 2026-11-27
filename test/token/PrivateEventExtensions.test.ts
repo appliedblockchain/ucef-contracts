@@ -296,5 +296,19 @@ describe('Private event salts in extensions', function () {
         .withArgs(ZeroAddress, userAddress)
       await token.connect(user).updatePrivateEventOracleSeed(ethers.id('oracle seed'))
     })
+
+    it('only lets the owner mix in a new contract seed', async function () {
+      const seed = randomSeed()
+      await expect(token.connect(user).setPrivateEventContractSeed(seed))
+        .to.be.revertedWithCustomError(token, 'OwnableUnauthorizedAccount')
+        .withArgs(userAddress)
+
+      await send(token.setPrivateEventContractSeed(seed), tracked)
+      const sharedState = sharedStateAfterSeed(tracked.address, seed, tracked.state)
+
+      const receipt = await send(token.connect(other).mint(userAddress, AMOUNT), tracked)
+
+      expect(saltsOf(tracked, receipt)).to.deep.equal(chain(ZeroHash, sharedState, 1))
+    })
   })
 })

@@ -54,6 +54,15 @@ Example:
 pnpm deploy:module UCEFOnlyOwner silentdata
 ```
 
+### 5. Wait for the first oracle seed update
+
+Until the oracle mixes in its first seed, the deployer is the only one who knows the token's shared state, and it can confirm guesses of the events of accounts without a seed. Only the oracle can make that update: its key is generated in the TEE and never leaves it, so the deployment modules cannot do it. Before the first mint:
+
+1. Add the token to the oracle's configuration. For the private-rollup optimism image, that is `PRIVATE_EVENT_ORACLE_TOKENS`, which updates a new token on its first run (15 minutes after the node restarts).
+2. Wait for the first update. The oracle logs it with its transaction hash.
+
+A token deployed without an oracle relies on its contract seed alone. Let its owner or admin mix in a new one with `setPrivateEventContractSeed` if the contract seed may have leaked.
+
 ## Local Development with Hardhat
 
 ### 1. Install Dependencies

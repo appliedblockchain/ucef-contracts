@@ -108,6 +108,33 @@ describe('PrivateEventEmitter seeds', function () {
     })
   })
 
+  describe('setPrivateEventContractSeed', function () {
+    const NEW_CONTRACT_SEED = ethers.id('new contract seed')
+
+    it('only lets the admin mix in a new contract seed', async function () {
+      await expect(token.connect(sender).setPrivateEventContractSeed(NEW_CONTRACT_SEED)).to.be.revertedWithCustomError(
+        token,
+        'AccessControlUnauthorizedAccount',
+      )
+    })
+
+    it('rejects a zero contract seed', async function () {
+      await expect(token.setPrivateEventContractSeed(ZeroHash)).to.be.revertedWithCustomError(
+        token,
+        'PrivateEventZeroSeed',
+      )
+    })
+
+    it('mixes the new contract seed into the shared state and emits no event', async function () {
+      const receipt = await (await token.setPrivateEventContractSeed(NEW_CONTRACT_SEED)).wait()
+      expect(receipt!.logs).to.have.length(0)
+      sharedState = sharedStateAfterSeed(tokenAddress, NEW_CONTRACT_SEED, sharedState)
+      expect(await transfer(sender)).to.deep.equal([
+        concat([transferPayload(senderAddress, recipientAddress, AMOUNT), saltOf(ZeroHash, sharedState)]),
+      ])
+    })
+  })
+
   describe('setPrivateEventSeed', function () {
     it('rejects a zero seed', async function () {
       await expect(token.connect(sender).setPrivateEventSeed(ZeroHash)).to.be.revertedWithCustomError(

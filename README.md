@@ -67,9 +67,9 @@ A block's receipts are committed in its public `receiptsRoot` and block hash. Wi
 
 | Seed | Set by | When | Purpose |
 | --- | --- | --- | --- |
-| Contract seed | The deployer, as the `contractSeed` constructor argument (UCEF3643: the owner, with `setPrivateEventContractSeed`) | Once, at deployment | Starts the token's shared state, so every event is salted from the first one, including events emitted by the constructor |
+| Contract seed | The deployer, as the `contractSeed` constructor argument (UCEF3643: the owner, with `setPrivateEventContractSeed`). Tokens can let their owner or admin mix in a new one later (the examples and `XUCEF`: `setPrivateEventContractSeed`) | At deployment (UCEF3643: after deployment, before the first private event); again at any time | Starts the token's shared state, so every event is salted from the first one (on the base tokens, including events emitted by the constructor). Mixing in a new value after a suspected leak protects all later events |
 | Oracle seed | The `privateEventOracle`, a TEE job, with `updatePrivateEventOracleSeed` | Periodically | Removes the deployer's knowledge of the shared state, and keeps refreshing it |
-| User seed | Each account, with `setPrivateEventSeed` | Optional, once per token | Lets an account protect its own events without trusting the deployer or the oracle |
+| User seed | Each account, with `setPrivateEventSeed` | Optional; first before the account's first private event, and again at any time | Lets an account protect its own events without trusting the deployer or the oracle. Setting a new seed after a known or suspected exposure protects all later events, since new values are mixed in and never restart a sequence |
 
 How they combine:
 
@@ -79,7 +79,7 @@ How they combine:
 
 What each party can do:
 
-- An account without a seed relies on the contract and oracle seeds. Whoever knows both can confirm guesses of its events. Until the first oracle update, that is the deployer alone.
+- An account without a seed relies on the contract and oracle seeds. Whoever knows both can confirm guesses of its events. Until the first oracle update, that is the deployer alone, and the ratchet does not help against it: it can step the state forward by the number of events. For production, point the token at an oracle and wait for its first update before the first mint (see [DEPLOY.md](DEPLOY.md)).
 - An account with a seed can only have its events confirmed by someone who knows its seed and both other seeds.
 - Contracts that move tokens for other accounts (vaults, wrappers, bridges, routers) need no setup: their events are salted from their own user state, which is zero unless they set a seed.
 - Receiving tokens never needs a seed.
@@ -87,7 +87,7 @@ What each party can do:
 Tokens:
 
 - Every UCEF constructor takes `contractSeed` (non-zero) and `oracle` (zero for none) as its last two arguments. Generate the contract seed off-chain for each deployment, never derive it from on-chain data, and keep it out of version control: the Ignition modules read it from the gitignored `ignition/parameters/<module>.json`.
-- `_setPrivateEventOracle` changes the oracle. Tokens decide who may call it: the examples let their admin call `setPrivateEventOracle`, and `XUCEF` its owner.
+- `_setPrivateEventOracle` changes the oracle, and `_mixPrivateEventContractSeed` mixes in a new contract seed. Tokens decide who may call them: the examples let their admin call `setPrivateEventOracle` and `setPrivateEventContractSeed`, and `XUCEF` its owner. A token without an oracle should expose `_mixPrivateEventContractSeed`, or it has no way to recover from a leaked contract seed. Mixing can never weaken the salts.
 - `hasPrivateEventSeed()` tells the caller whether it has set a user seed. It only answers for `msg.sender`. The SDK's `ensurePrivateEventSeed` helper generates and sets a random seed if the caller has none, and `generateSeed()` generates contract and oracle seeds too.
 
 **Precondition: Silent Data.** The seeds are only secret because Silent Data shows a transaction's input only to its sender, exposes no contract storage, and the token has no getter or event for them. On a chain where calldata or storage is public, the salts are not secret.

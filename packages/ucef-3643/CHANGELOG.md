@@ -23,6 +23,7 @@ While the version is below 1.0.0, a minor version bump can contain breaking chan
 - **Breaking:** every `PrivateEvent` payload ends with a 32-byte salt, so a guessed payload cannot be confirmed against the public block hash.
   The salt mixes the contract seed, the oracle seed and the optional seed of `msg.sender`.
   Private events revert with `PrivateEventContractSeedNotSet()` until the owner sets the contract seed, so set it after deployment, before the first mint.
+  Explorers, indexers and other decoders of `PrivateEvent` payloads must ignore the last 32 bytes: `abi.decode` with the original event signature already does, but code that checks the payload length or decodes it byte by byte has to drop them.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 
 ## 0.1.0 - 2026-11-24

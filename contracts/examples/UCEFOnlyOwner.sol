@@ -16,6 +16,10 @@ contract UCEFOnlyOwner is UCEFOwned, AccessControl {
         _setPrivateEventOracle(oracle);
     }
 
+    function setPrivateEventContractSeed(bytes32 seed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _mixPrivateEventContractSeed(seed);
+    }
+
     function mint(address account, uint256 amount) public {
         _mint(account, amount);
     }

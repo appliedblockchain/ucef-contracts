@@ -14,7 +14,9 @@ While the version is below 1.0.0, a minor version bump can contain breaking chan
   - `updatePrivateEventOracleSeed(bytes32)`, for the oracle to mix a new oracle seed into the token's shared state;
   - `privateEventOracle()`, the `PrivateEventOracleUpdated` event, and the internal `_setPrivateEventOracle` for tokens to expose with their own access control.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
-- `XUCEF.setPrivateEventOracle(address)`, for the owner to change the oracle.
+- The internal `_mixPrivateEventContractSeed`, for tokens to let their owner or admin mix in a new contract seed, e.g. after a suspected leak on a token without an oracle.
+  ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
+- `XUCEF.setPrivateEventOracle(address)` and `XUCEF.setPrivateEventContractSeed(bytes32)`, for the owner to change the oracle and mix in a new contract seed.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 
 ### Changed
@@ -22,6 +24,7 @@ While the version is below 1.0.0, a minor version bump can contain breaking chan
 - **Breaking:** every `PrivateEvent` payload ends with a 32-byte salt, so a guessed payload cannot be confirmed against the public block hash.
   The salt mixes the token's contract seed, its oracle seed and the optional seed of `msg.sender`, so only one of them has to stay secret.
   Decoders that ignore trailing data still decode payloads with the original event signature.
+  Explorers, indexers and other decoders of `PrivateEvent` payloads must ignore the last 32 bytes: `abi.decode` with the original event signature already does, but code that checks the payload length or decodes it byte by byte has to drop them.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
 - **Breaking:** the `UCEF`, `UCEFOwned`, `UCEFRegulated`, `UCEFSharable` and `XUCEF` constructors take two more arguments, last: `contractSeed`, a secret random value that must not be zero, and `oracle`, the address allowed to update the oracle seed, or zero for none.
   ([#8](https://github.com/appliedblockchain/ucef-contracts/pull/8))
