@@ -2,6 +2,8 @@
 	"XUCEFModule": {
 		"name": "xUSDC",
 		"symbol": "XUSDC",
-		"decimals": 6
+		"decimals": 6,
+		"contractSeed": "<32 random bytes, e.g. from the SDK's generateSeed()>",
+		"oracle": "0x0000000000000000000000000000000000000000"
 	}
 }

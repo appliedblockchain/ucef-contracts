@@ -67,7 +67,13 @@ abstract contract UCEFRegulated is UCEF {
      * Requirements:
      * - `initialRegulator` cannot be the zero address
      */
-    constructor(address initialRegulator, string memory name, string memory symbol) UCEF(name, symbol) {
+    constructor(
+        address initialRegulator,
+        string memory name,
+        string memory symbol,
+        bytes32 contractSeed,
+        address oracle
+    ) UCEF(name, symbol, contractSeed, oracle) {
         if (initialRegulator == address(0)) {
             revert UCEFRegulatedInvalidRegulator(address(0));
         }
@@ -216,7 +222,7 @@ abstract contract UCEFRegulated is UCEF {
         address[] memory allowedViewers = _getRegulatorUpdatedEventViewers(previousRegulator, newRegulator);
         bytes memory payload = abi.encode(previousRegulator, newRegulator);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_REGULATOR_UPDATED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_REGULATOR_UPDATED, payload);
     }
 
     /**

@@ -92,8 +92,16 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
      * @dev Constructor that sets the name and symbol of the token
      * @param name The name of the token
      * @param symbol The symbol of the token
+     * @param contractSeed Secret random value that starts the private event salt state, must not be zero
+     * (see {PrivateEventEmitter})
+     * @param oracle Address allowed to update the private event oracle seed, or zero for none
      */
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
+    constructor(
+        string memory name,
+        string memory symbol,
+        bytes32 contractSeed,
+        address oracle
+    ) ERC20(name, symbol) PrivateEventEmitter(contractSeed, oracle) {}
 
     /**
      * @dev Internal function to determine if an address is authorized to view a balance
@@ -282,10 +290,12 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
      * @param value The amount of tokens being spent
      *
      * Note: This function calls _approve internally with emitEvent=false to avoid
-     * unnecessary event emissions during transfers
+     * unnecessary event emissions during transfers. It reads the allowance directly rather than
+     * through `allowance`, which only answers to the owner or the spender: the spender is not always
+     * `msg.sender` (e.g. a flash loan spends the borrower's allowance to the token itself).
      */
     function _spendAllowance(address owner, address spender, uint256 value) internal override virtual {
-        uint256 currentAllowance = allowance(owner, spender);
+        uint256 currentAllowance = _allowance(owner, spender);
         if (currentAllowance < type(uint256).max) {
             if (currentAllowance < value) {
                 revert ERC20InsufficientAllowance(address(0), 0, 0);
@@ -308,7 +318,7 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
         address[] memory allowedViewers = _getTransferEventViewers(from, to, value);
         bytes memory payload = abi.encode(from, to, value);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_TRANSFER, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_TRANSFER, payload);
     }
 
     /**
@@ -356,7 +366,7 @@ abstract contract UCEF is ERC20, PrivateEventEmitter {
         address[] memory allowedViewers = _getApprovalEventViewers(owner, spender, value);
         bytes memory payload = abi.encode(owner, spender, value);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_APPROVAL, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_APPROVAL, payload);
     }
 
     /**

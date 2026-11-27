@@ -26,7 +26,12 @@ import {UCEF} from "./UCEF.sol";
  */
 abstract contract UCEFOwned is UCEF {
 
-    constructor(string memory name, string memory symbol) UCEF(name, symbol) {}
+    constructor(
+        string memory name,
+        string memory symbol,
+        bytes32 contractSeed,
+        address oracle
+    ) UCEF(name, symbol, contractSeed, oracle) {}
 
 
     /**

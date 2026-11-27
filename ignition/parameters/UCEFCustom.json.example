@@ -1,0 +1,6 @@
+{
+	"UCEFCustomModule": {
+		"contractSeed": "<32 random bytes as hex, e.g. from the SDK's generateSeed()>",
+		"oracle": "0x0000000000000000000000000000000000000000"
+	}
+}

@@ -96,7 +96,13 @@ abstract contract UCEFSharable is UCEF {
      * @dev Constructor that sets the initial supervisor address
      * @param initialSupervisor The address to be set as the first supervisor (can be zero address to start unregulated)
      */
-    constructor(address initialSupervisor, string memory name, string memory symbol) UCEF(name, symbol) {
+    constructor(
+        address initialSupervisor,
+        string memory name,
+        string memory symbol,
+        bytes32 contractSeed,
+        address oracle
+    ) UCEF(name, symbol, contractSeed, oracle) {
         _updateSupervisor(initialSupervisor);
     }
 
@@ -305,7 +311,7 @@ abstract contract UCEFSharable is UCEF {
         address[] memory allowedViewers = _getViewerPermissionUpdatedEventViewers(account, viewer, status);
         bytes memory payload = abi.encode(account, viewer, status);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_VIEWER_PERMISSION_UPDATED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_VIEWER_PERMISSION_UPDATED, payload);
     }
 
     /**
@@ -354,7 +360,7 @@ abstract contract UCEFSharable is UCEF {
         address[] memory allowedViewers = _getSupervisorUpdatedEventViewers(previousSupervisor, newSupervisor);
         bytes memory payload = abi.encode(previousSupervisor, newSupervisor);
 
-        emit PrivateEvent(allowedViewers, EVENT_TYPE_SUPERVISOR_UPDATED, payload);
+        _emitPrivateEvent(allowedViewers, EVENT_TYPE_SUPERVISOR_UPDATED, payload);
     }
 
     /**

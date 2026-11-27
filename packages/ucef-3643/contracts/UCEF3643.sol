@@ -10,19 +10,165 @@ import {IIdentityRegistry} from "@tokenysolutions/t-rex/contracts/registry/inter
  * @dev Abstract contract that provides private event emission functionality
  * This contract defines the PrivateEvent that can be used to emit private events
  * with restricted visibility to specific addresses
+ *
+ * Salted payloads (same scheme as the PrivateEventEmitter of the ucef package):
+ * every payload ends with a 32-byte salt mixed from three secret seeds, so a guessed payload
+ * cannot be confirmed against the public block hash, and only one seed has to stay secret:
+ * - Contract seed: set by the token's owner after deployment with `setPrivateEventContractSeed`.
+ *   Private events revert until it is set, so it must be set before the first mint.
+ * - Oracle seed: set and rotated by `privateEventOracle` with `updatePrivateEventOracleSeed`.
+ * - User seed: optional, set by an account with `setPrivateEventSeed`.
+ * The contract and oracle seeds are mixed into a shared state, and user seeds into a state per
+ * account, each bound to the token and the previous state so a seed value never restarts a salt
+ * sequence. Each event gets salt = keccak256(user state of msg.sender, shared state, "salt"),
+ * after which both states ratchet, so a leaked state does not expose earlier events.
+ *
+ * Precondition: the seeds are only secret on Silent Data, where a transaction's input is only
+ * visible to its sender and contract storage has no public reader.
+ *
+ * Do not emit private events from `init`, which runs in the proxy constructor, before the
+ * contract seed can be set.
+ *
+ * The states live at a fixed ERC-7201 slot, so they do not shift the storage layout of
+ * upgradeable tokens. Whoever can upgrade the token can deploy an implementation that
+ * reads them, so the token's owner is trusted not to.
  */
 abstract contract PrivateEventEmitter {
     /**
      * @dev Emitted when a private event is logged
      * @param allowedViewers Array of addresses authorized to view this event
      * @param eventType The keccak256 hash of the original event signature
-     * @param payload ABI-encoded event arguments
+     * @param payload ABI-encoded event arguments, followed by a 32-byte salt
      */
     event PrivateEvent(
         address[] allowedViewers,
         bytes32 indexed eventType,
         bytes payload
     );
+
+    /**
+     * @dev Emitted when the address allowed to update the oracle seed changes
+     */
+    event PrivateEventOracleUpdated(address indexed previousOracle, address indexed newOracle);
+
+    /**
+     * @dev Thrown when a seed is set to zero
+     */
+    error PrivateEventZeroSeed();
+
+    /**
+     * @dev Thrown when an address other than the oracle updates the oracle seed
+     */
+    error PrivateEventUnauthorizedOracle(address sender);
+
+    /**
+     * @dev Thrown when a private event is emitted before the contract seed is set
+     */
+    error PrivateEventContractSeedNotSet();
+
+    /// @custom:storage-location erc7201:silentdata.storage.UCEF3643PrivateEventEmitter
+    struct PrivateEventEmitterStorage {
+        mapping(address => bytes32) userStates;
+        bytes32 sharedState;
+        address oracle;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("silentdata.storage.UCEF3643PrivateEventEmitter")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant PRIVATE_EVENT_EMITTER_STORAGE_LOCATION =
+        0x1a121175e2c3714b6ab528cca79c89bb9dc9896e0229270d781a671e2fd6d600;
+
+    /**
+     * @notice Sets the caller's secret seed, mixed into the salts of the private events it triggers
+     * @dev Optional. Can be called again: the new seed is mixed into the current state.
+     * The seed must be random and kept secret.
+     * @param seed Secret random value, must not be zero
+     */
+    function setPrivateEventSeed(bytes32 seed) external {
+        if (seed == bytes32(0)) {
+            revert PrivateEventZeroSeed();
+        }
+        mapping(address => bytes32) storage userStates = _getPrivateEventEmitterStorage().userStates;
+        userStates[msg.sender] = keccak256(abi.encode(address(this), msg.sender, userStates[msg.sender], seed));
+    }
+
+    /**
+     * @notice Whether the caller has set a seed
+     * @dev Only answers for `msg.sender`, so arbitrary callers cannot query other accounts.
+     */
+    function hasPrivateEventSeed() external view returns (bool) {
+        return _getPrivateEventEmitterStorage().userStates[msg.sender] != bytes32(0);
+    }
+
+    /**
+     * @notice Mixes a new oracle seed into the shared state
+     * @dev Only callable by `privateEventOracle`. Emits no event, as the call itself is private.
+     * @param seed Secret random value, must not be zero
+     */
+    function updatePrivateEventOracleSeed(bytes32 seed) external {
+        if (msg.sender != _getPrivateEventEmitterStorage().oracle) {
+            revert PrivateEventUnauthorizedOracle(msg.sender);
+        }
+        _mixPrivateEventSharedState(seed);
+    }
+
+    /**
+     * @notice The address allowed to update the oracle seed
+     */
+    function privateEventOracle() public view returns (address) {
+        return _getPrivateEventEmitterStorage().oracle;
+    }
+
+    /**
+     * @dev Emits a PrivateEvent with a salt appended to the payload
+     */
+    function _emitPrivateEvent(address[] memory allowedViewers, bytes32 eventType, bytes memory payload) internal {
+        emit PrivateEvent(allowedViewers, eventType, bytes.concat(payload, _nextPrivateEventSalt()));
+    }
+
+    /**
+     * @dev Changes the address allowed to update the oracle seed
+     */
+    function _setPrivateEventOracle(address newOracle) internal {
+        PrivateEventEmitterStorage storage $ = _getPrivateEventEmitterStorage();
+        emit PrivateEventOracleUpdated($.oracle, newOracle);
+        $.oracle = newOracle;
+    }
+
+    /**
+     * @dev Mixes `seed` into the shared state, bound to the token and the previous state
+     */
+    function _mixPrivateEventSharedState(bytes32 seed) internal {
+        if (seed == bytes32(0)) {
+            revert PrivateEventZeroSeed();
+        }
+        PrivateEventEmitterStorage storage $ = _getPrivateEventEmitterStorage();
+        $.sharedState = keccak256(abi.encode(address(this), $.sharedState, seed));
+    }
+
+    /**
+     * @dev Returns the salt for the next private event and ratchets the states it came from:
+     * salt = keccak256(user state, shared state, "salt"), next state = keccak256(state, "next")
+     */
+    function _nextPrivateEventSalt() private returns (bytes32) {
+        PrivateEventEmitterStorage storage $ = _getPrivateEventEmitterStorage();
+        bytes32 sharedState = $.sharedState;
+        if (sharedState == bytes32(0)) {
+            revert PrivateEventContractSeedNotSet();
+        }
+        bytes32 userState = $.userStates[msg.sender];
+
+        $.sharedState = keccak256(abi.encodePacked(sharedState, "next"));
+        if (userState != bytes32(0)) {
+            $.userStates[msg.sender] = keccak256(abi.encodePacked(userState, "next"));
+        }
+        return keccak256(abi.encodePacked(userState, sharedState, "salt"));
+    }
+
+    function _getPrivateEventEmitterStorage() private pure returns (PrivateEventEmitterStorage storage $) {
+        assembly {
+            $.slot := PRIVATE_EVENT_EMITTER_STORAGE_LOCATION
+        }
+    }
 }
 
 contract UCEF3643 is Token, PrivateEventEmitter {
@@ -51,6 +197,25 @@ contract UCEF3643 is Token, PrivateEventEmitter {
 
     event AuditorAdded(address indexed _auditor);
     event AuditorRemoved(address indexed _auditor);
+
+    /**
+     * @notice Mixes the contract seed into the private event shared state
+     * @dev Only callable by the owner. Must be called after deployment, before the first private
+     * event: until then private events revert. Calling it again mixes in a new seed.
+     * @param seed Secret random value generated off-chain, must not be zero
+     */
+    function setPrivateEventContractSeed(bytes32 seed) external onlyOwner {
+        _mixPrivateEventSharedState(seed);
+    }
+
+    /**
+     * @notice Changes the address allowed to update the private event oracle seed
+     * @dev Only callable by the owner
+     * @param oracle The new oracle, or zero for none
+     */
+    function setPrivateEventOracle(address oracle) external onlyOwner {
+        _setPrivateEventOracle(oracle);
+    }
 
     function addAuditor(address account) external onlyAgent {
         require(account != address(0), "Invalid address");
@@ -406,7 +571,7 @@ contract UCEF3643 is Token, PrivateEventEmitter {
      * @param participants Array of participant addresses for this specific event
      */
     function _emitPrivate(bytes32 eventType, bytes memory payload, address[] memory participants) internal {
-        emit PrivateEvent(_buildAllowedViewers(participants), eventType, payload);
+        _emitPrivateEvent(_buildAllowedViewers(participants), eventType, payload);
     }
 
     /**

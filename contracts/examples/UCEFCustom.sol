@@ -10,10 +10,18 @@ contract UCEFCustom is UCEF, AccessControl {
     address public regulator;
     uint256 private constant BALANCE_THRESHOLD = 10_000 ether;
 
-    constructor() UCEF("UCEFCustom", "uOCT") {
+    constructor(bytes32 contractSeed, address oracle) UCEF("UCEFCustom", "uOCT", contractSeed, oracle) {
         regulator = msg.sender;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
+    }
+
+    function setPrivateEventOracle(address oracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setPrivateEventOracle(oracle);
+    }
+
+    function setPrivateEventContractSeed(bytes32 seed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _mixPrivateEventContractSeed(seed);
     }
 
     function mint(address account, uint256 amount) public {

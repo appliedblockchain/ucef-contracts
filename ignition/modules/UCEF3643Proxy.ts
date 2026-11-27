@@ -49,6 +49,16 @@ export default buildModule('UCEF3643Module', (m) => {
     after: [tokenProxy],
   })
 
+  // Private events revert until the owner sets the contract seed: set it in a parameters file, never commit it
+  const setContractSeed = m.call(token, 'setPrivateEventContractSeed', [m.getParameter<string>('contractSeed')], {
+    id: 'setPrivateEventContractSeed',
+    after: [tokenProxy],
+  })
+  m.call(token, 'setPrivateEventOracle', [m.getParameter('oracle', '0x0000000000000000000000000000000000000000')], {
+    id: 'setPrivateEventOracle',
+    after: [setContractSeed],
+  })
+
   // Grant agent role to deployer
   const addAgent = m.call(token, 'addAgent', [deployerAddress], {
     id: 'addAgent',

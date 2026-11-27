@@ -7,9 +7,20 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 contract UCEFOnlyOwnerAndRegulator is UCEFRegulated, AccessControl {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    constructor() UCEFRegulated(msg.sender, 'UCEFOnlyOwnerAndRegulator', 'uOOT') {
+    constructor(
+        bytes32 contractSeed,
+        address oracle
+    ) UCEFRegulated(msg.sender, 'UCEFOnlyOwnerAndRegulator', 'uOOT', contractSeed, oracle) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
+    }
+
+    function setPrivateEventOracle(address oracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setPrivateEventOracle(oracle);
+    }
+
+    function setPrivateEventContractSeed(bytes32 seed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _mixPrivateEventContractSeed(seed);
     }
 
     function mint(address account, uint256 amount) public {

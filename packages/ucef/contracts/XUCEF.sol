@@ -43,13 +43,17 @@ contract XUCEF is UCEFOwned, Ownable, IXERC20, ERC20Permit {
      * @param _name The name of the token
      * @param _symbol The symbol of the token
      * @param _factory The factory which deployed this contract
+     * @param _contractSeed Secret random value that starts the private event salt state, must not be zero
+     * @param _oracle Address allowed to update the private event oracle seed, or zero for none
      */
     constructor(
         string memory _name,
         string memory _symbol,
         uint8 __decimals,
-        address _factory
-    ) UCEFOwned(_name, _symbol) ERC20Permit(_name) Ownable(_factory) {
+        address _factory,
+        bytes32 _contractSeed,
+        address _oracle
+    ) UCEFOwned(_name, _symbol, _contractSeed, _oracle) ERC20Permit(_name) Ownable(_factory) {
         FACTORY = _factory;
         _decimals = __decimals;
     }
@@ -105,6 +109,25 @@ contract XUCEF is UCEFOwned, Ownable, IXERC20, ERC20Permit {
         _changeMinterLimit(_bridge, _mintingLimit);
         _changeBurnerLimit(_bridge, _burningLimit);
         emit BridgeLimitsSet(_mintingLimit, _burningLimit, _bridge);
+    }
+
+    /**
+     * @notice Changes the address allowed to update the private event oracle seed
+     * @dev Only callable by the owner
+     * @param _oracle The new oracle, or zero for none
+     */
+    function setPrivateEventOracle(address _oracle) external onlyOwner {
+        _setPrivateEventOracle(_oracle);
+    }
+
+    /**
+     * @notice Mixes a new contract seed into the private event shared state
+     * @dev Only callable by the owner. Each call mixes in, never replaces, so it can be used after
+     * a suspected leak of the contract seed.
+     * @param _seed Secret random value generated off-chain, must not be zero
+     */
+    function setPrivateEventContractSeed(bytes32 _seed) external onlyOwner {
+        _mixPrivateEventContractSeed(_seed);
     }
 
     /**

@@ -1,8 +1,13 @@
-import { BaseContract, ContractTransactionResponse, Signer } from 'ethers'
+import { BaseContract, ContractTransactionResponse, Signer, ZeroAddress } from 'ethers'
 import { ethers } from 'hardhat'
+import { randomSeed } from './private-event'
 
 type DeployTokenOptions = {
   initialSupply?: bigint
+  // Private event contract seed, random by default
+  contractSeed?: string
+  // Private event oracle, none by default
+  oracle?: string
 }
 
 type TokenContract = BaseContract & {
@@ -19,7 +24,12 @@ export async function deployToken<T extends TokenContract>(
   const [owner] = await ethers.getSigners()
 
   const TokenFactory = await ethers.getContractFactory(contractName)
-  const token = (await TokenFactory.deploy(...args)) as unknown as T
+  // Every UCEF token takes the private event contract seed and oracle as its last constructor arguments
+  const token = (await TokenFactory.deploy(
+    ...args,
+    options.contractSeed ?? randomSeed(),
+    options.oracle ?? ZeroAddress,
+  )) as unknown as T
   await token.waitForDeployment()
 
   if (options.initialSupply) {

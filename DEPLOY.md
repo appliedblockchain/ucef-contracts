@@ -38,7 +38,11 @@ SILENTDATA_CHAIN_ID=<silent_data_chain_id>
 pnpm compile:all
 ```
 
-### 3. Deploy to Silent Data
+### 3. Set the private event contract seed
+
+Every UCEF token takes a secret random contract seed (see [Salted payloads](README.md#salted-payloads)). Copy `ignition/parameters/<module_name>.json.example` to `ignition/parameters/<module_name>.json` and set `contractSeed` to 32 random bytes, and `oracle` to the address of the oracle that rotates the oracle seed. `pnpm deploy:module` reads this file. It is gitignored: never commit it, and keep the local Ignition deployment journal, which records it, private.
+
+### 4. Deploy to Silent Data
 
 ```bash
 pnpm deploy:module <module_name> silentdata
@@ -49,6 +53,15 @@ Example:
 ```bash
 pnpm deploy:module UCEFOnlyOwner silentdata
 ```
+
+### 5. Wait for the first oracle seed update
+
+Until the oracle mixes in its first seed, the deployer is the only one who knows the token's shared state, and it can confirm guesses of the events of accounts without a seed. Only the oracle can make that update: its key is generated in the TEE and never leaves it, so the deployment modules cannot do it. Before the first mint:
+
+1. Add the token to the oracle's configuration. For the private-rollup optimism image, that is `PRIVATE_EVENT_ORACLE_TOKENS`, which updates a new token on its first run (15 minutes after the node restarts).
+2. Wait for the first update. The oracle logs it with its transaction hash.
+
+A token deployed without an oracle relies on its contract seed alone. Let its owner or admin mix in a new one with `setPrivateEventContractSeed` if the contract seed may have leaked.
 
 ## Local Development with Hardhat
 
@@ -80,7 +93,11 @@ Create a `.env` file in the root directory with deployer private key:
 PRIVATE_KEY=<deployer_private_key>
 ```
 
-### 5. Deploy to Local Network
+### 5. Set the private event contract seed
+
+As for Silent Data, create `ignition/parameters/<module_name>.json` from its `.example` with a random `contractSeed`.
+
+### 6. Deploy to Local Network
 
 ```bash
 pnpm deploy:module <module_name>
